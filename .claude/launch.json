@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "KPI Dashboard Frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5173,
+      "cwd": "/Users/rahulbahri/Documents/Axiom/kpi-dashboard/frontend"
+    },
+    {
+      "name": "KPI Dashboard Backend",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"],
+      "port": 8000,
+      "cwd": "/Users/rahulbahri/Documents/Axiom/kpi-dashboard/backend"
+    }
+  ]
+}
