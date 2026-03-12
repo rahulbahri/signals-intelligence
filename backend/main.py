@@ -568,6 +568,9 @@ def fingerprint(year: Optional[int] = None):
             "trend":         trend,
             "fy_status":     status(avg, tval, dirn),
             "monthly":       monthly_list,
+            "causation":     CAUSATION_RULES.get(key, {
+                                 "root_causes": [], "downstream_impact": [], "corrective_actions": []
+                             }),
         })
 
     return fingerprint_out

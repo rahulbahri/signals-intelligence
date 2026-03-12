@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
 import {
   X, TrendingUp, TrendingDown, Minus,
-  Target, FlaskConical, Calendar, Star, AlertTriangle
+  Target, FlaskConical, Calendar, Star, AlertTriangle,
+  ArrowRight, Lightbulb, AlertOctagon, CheckCircle2
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -376,6 +377,85 @@ export default function KpiDetailPanel({ kpi, onClose }) {
                 </table>
               </div>
             </div>
+
+            {/* ── Causation Analysis ────────────────────── */}
+            {kpi.causation && (
+              kpi.causation.root_causes?.length > 0 ||
+              kpi.causation.downstream_impact?.length > 0 ||
+              kpi.causation.corrective_actions?.length > 0
+            ) && (
+              <div className="px-5 py-4 border-t border-slate-100 space-y-5">
+                <p className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                  <AlertOctagon size={12} className="text-slate-400"/>
+                  Causation Analysis
+                </p>
+
+                {/* Root Causes */}
+                {kpi.causation?.root_causes?.length > 0 && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider font-semibold text-red-500 mb-2.5">
+                      Root Causes
+                    </p>
+                    <ol className="space-y-2">
+                      {kpi.causation.root_causes.map((rc, i) => (
+                        <li key={i} className="flex items-start gap-2.5">
+                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-red-100 text-red-600
+                                           text-[9px] font-bold flex items-center justify-center mt-0.5">
+                            {i + 1}
+                          </span>
+                          <span className="text-xs text-slate-600 leading-snug">{rc}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
+
+                {/* Downstream Impact */}
+                {kpi.causation?.downstream_impact?.length > 0 && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider font-semibold text-amber-600 mb-2.5">
+                      Downstream Impact
+                    </p>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {kpi.causation.downstream_impact.map((d, i) => (
+                        <span key={d} className="flex items-center gap-1">
+                          <span className="text-[11px] bg-amber-50 text-amber-700 border border-amber-200
+                                           px-2.5 py-1 rounded-full font-medium">
+                            {d.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                          </span>
+                          {i < kpi.causation.downstream_impact.length - 1 && (
+                            <ArrowRight size={11} className="text-slate-300 flex-shrink-0"/>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1.5">
+                      A sustained deviation in this KPI will pressure the metrics above.
+                    </p>
+                  </div>
+                )}
+
+                {/* Recommended Action Steps */}
+                {kpi.causation?.corrective_actions?.length > 0 && (
+                  <div className="bg-emerald-50/60 border border-emerald-100 rounded-xl p-4">
+                    <p className="text-[10px] uppercase tracking-wider font-semibold text-emerald-700 mb-2.5 flex items-center gap-1.5">
+                      <CheckCircle2 size={11} className="text-emerald-500"/>
+                      Recommended Action Steps
+                    </p>
+                    <ul className="space-y-2">
+                      {kpi.causation.corrective_actions.map((ca, i) => (
+                        <li key={i} className="flex items-start gap-2.5">
+                          <span className="flex-shrink-0 text-emerald-500 mt-0.5">
+                            <CheckCircle2 size={13}/>
+                          </span>
+                          <span className="text-xs text-slate-600 leading-snug">{ca}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Bottom padding */}
             <div className="h-6"/>
