@@ -5,17 +5,29 @@
 * { font-family: 'Inter', sans-serif; }
 
 /* ── Base ──────────────────────────────────────────────── */
-body { background: #f0f4f8; color: #0f172a; }
+/*
+  Body: #EBF0FA — a warm indigo-blue off-white (vs cold #f0f4f8).
+  Research: Top BI tools (Linear, Hex, Amplitude) use a subtle
+  blue-tinted off-white that makes white cards "pop" with depth
+  while feeling more refined than a clinical cool gray.
+*/
+body { background: #EBF0FA; color: #0f172a; }
 
 /* ── Scrollbars ─────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: #e2e8f0; }
-::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
+::-webkit-scrollbar-track { background: #D8E1EF; }
+::-webkit-scrollbar-thumb { background: #8A9EC0; border-radius: 3px; }
 
 /* ── Sidebar ────────────────────────────────────────────── */
+/*
+  Deeper ink-navy: #07122A → #0E2248
+  Research: Financial SaaS leaders (Cohere, Amplitude, Brex) use a
+  deeper, near-black navy with rich blue undertones — feels premium
+  and authoritative. Stronger depth vs the old #0f2044 → #1a3360.
+*/
 .sidebar {
-  background: linear-gradient(180deg, #0f2044 0%, #1a3360 100%);
-  box-shadow: 4px 0 20px rgba(0,0,0,0.15);
+  background: linear-gradient(180deg, #07122A 0%, #0E2248 100%);
+  box-shadow: 4px 0 28px rgba(0,0,0,0.25);
 }
 .sidebar-link {
   @apply flex items-center gap-3 px-4 py-3 mx-2 rounded-lg text-sm font-medium
@@ -29,14 +41,19 @@ body { background: #f0f4f8; color: #0f172a; }
 .sidebar-link.active svg { color: #00AEEF; }
 
 /* ── Cards ──────────────────────────────────────────────── */
+/*
+  White cards on the blue-tinted background create clear depth.
+  Slightly more shadow + warmer border for the "elevated surface"
+  aesthetic used by Linear, Notion, and Retool in 2025.
+*/
 .card {
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(15,23,42,0.06);
+  border: 1px solid #DDE5F4;
+  border-radius: 14px;
+  box-shadow: 0 1px 5px rgba(15,23,42,0.07), 0 0 0 0.5px rgba(100,130,200,0.06);
 }
 .card:hover {
-  box-shadow: 0 4px 16px rgba(15,23,42,0.10);
+  box-shadow: 0 5px 18px rgba(15,23,42,0.11), 0 0 0 0.5px rgba(100,130,200,0.08);
   transition: box-shadow 0.2s;
 }
 
@@ -65,8 +82,9 @@ body { background: #f0f4f8; color: #0f172a; }
 
 /* ── Top summary strip ───────────────────────────────────── */
 .summary-tile {
-  @apply bg-white border border-slate-200 rounded-xl px-4 py-3;
-  box-shadow: 0 1px 3px rgba(15,23,42,0.05);
+  @apply bg-white border rounded-xl px-4 py-3;
+  border-color: #DDE5F4;
+  box-shadow: 0 1px 4px rgba(15,23,42,0.06);
 }
 
 /* ── Section header bar ──────────────────────────────────── */
@@ -76,10 +94,14 @@ body { background: #f0f4f8; color: #0f172a; }
 }
 
 /* ── Topbar ──────────────────────────────────────────────── */
+/*
+  White topbar with a blue-tinted border to harmonise with the body.
+  Slightly stronger shadow for clear depth separation.
+*/
 .topbar {
   background: #ffffff;
-  border-bottom: 1px solid #e2e8f0;
-  box-shadow: 0 1px 4px rgba(15,23,42,0.05);
+  border-bottom: 1px solid #D8E2F5;
+  box-shadow: 0 1px 6px rgba(15,23,42,0.07);
 }
 
 /* ── Page title ──────────────────────────────────────────── */
@@ -90,7 +112,7 @@ body { background: #f0f4f8; color: #0f172a; }
   content: '';
   display: inline-block;
   width: 4px; height: 18px;
-  background: #0055A4;
+  background: linear-gradient(180deg, #0055A4 0%, #00AEEF 100%);
   border-radius: 2px;
 }
 
@@ -102,6 +124,6 @@ body { background: #f0f4f8; color: #0f172a; }
 
 @keyframes pulse-accent {
   0%,100% { box-shadow: 0 0 0 0 rgba(0,85,164,0); }
-  50%      { box-shadow: 0 0 12px 3px rgba(0,85,164,0.2); }
+  50%      { box-shadow: 0 0 14px 4px rgba(0,85,164,0.18); }
 }
 .pulse-accent { animation: pulse-accent 3s ease-in-out infinite; }
