@@ -2,11 +2,17 @@ import { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
 import { Sparkles, Send, ChevronDown, ChevronUp, Bot, User } from 'lucide-react'
 
-const SUGGESTIONS = [
+const BASE_SUGGESTIONS = [
   "Which KPIs need immediate action?",
   "Summarise our FY 2025 performance",
   "What's driving the margin improvement?",
   "Where should management focus this quarter?",
+]
+
+const BRIDGE_SUGGESTIONS = [
+  "Why is gross margin below projection and what should we do?",
+  "Which KPIs are furthest behind projection?",
+  "What's causing the gap between projected and actual?",
 ]
 
 function TypingDots() {
@@ -19,7 +25,7 @@ function TypingDots() {
   )
 }
 
-export default function AiQueryPanel() {
+export default function AiQueryPanel({ bridgeData, prefillQuestion, onPrefillConsumed }) {
   const [expanded, setExpanded]   = useState(false)
   const [messages, setMessages]   = useState([])
   const [input, setInput]         = useState('')
@@ -27,12 +33,27 @@ export default function AiQueryPanel() {
   const messagesEndRef             = useRef(null)
   const inputRef                   = useRef(null)
 
+  const hasProjection = bridgeData?.has_projection && bridgeData?.has_overlap
+  const suggestions   = hasProjection
+    ? [...BRIDGE_SUGGESTIONS, ...BASE_SUGGESTIONS]
+    : BASE_SUGGESTIONS
+
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (expanded && messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
     }
   }, [messages, loading, expanded])
+
+  // Pre-fill from "Ask Anika" button in ProjectionBridge
+  useEffect(() => {
+    if (!prefillQuestion) return
+    setExpanded(true)
+    setInput(prefillQuestion)
+    onPrefillConsumed?.()
+    // Focus input after expansion renders
+    setTimeout(() => inputRef.current?.focus(), 50)
+  }, [prefillQuestion])
 
   async function send(question) {
     const q = (question ?? input).trim()
@@ -78,6 +99,11 @@ export default function AiQueryPanel() {
               {messages.filter(m => m.role === 'ai').length}
             </span>
           )}
+          {hasProjection && (
+            <span className="text-[9px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded-full font-medium border border-blue-500/30">
+              + Projection
+            </span>
+          )}
         </div>
         {expanded
           ? <ChevronDown size={12} className="text-slate-500"/>
@@ -95,7 +121,7 @@ export default function AiQueryPanel() {
               <div className="pt-1 pb-2">
                 <p className="text-[10px] text-slate-500 mb-2 uppercase tracking-wider font-medium">Suggestions</p>
                 <div className="flex flex-col gap-1.5">
-                  {SUGGESTIONS.map(s => (
+                  {suggestions.map(s => (
                     <button key={s}
                       onClick={() => send(s)}
                       className="text-left text-[11px] text-slate-400 hover:text-[#00AEEF] py-1 px-2

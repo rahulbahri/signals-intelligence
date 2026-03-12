@@ -60,6 +60,20 @@ def init_db():
             unit TEXT,
             direction TEXT
         );
+        CREATE TABLE IF NOT EXISTS projection_uploads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename TEXT,
+            uploaded_at TEXT,
+            row_count INTEGER,
+            detected_columns TEXT
+        );
+        CREATE TABLE IF NOT EXISTS projection_monthly_data (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            projection_upload_id INTEGER,
+            year INTEGER,
+            month INTEGER,
+            data_json TEXT
+        );
     """)
     conn.commit()
     # Seed default targets
@@ -114,6 +128,244 @@ KPI_DEFS = [
     {"key": "churn_rate",           "name": "Monthly Churn Rate",        "unit": "pct",    "direction": "lower",  "formula": "Lost_Customers / Total_Customers × 100"},
     {"key": "operating_leverage",   "name": "Operating Leverage Index",  "unit": "ratio",  "direction": "higher", "formula": "% Change in Operating Income / % Change in Revenue"},
 ]
+
+# ─── Causation Rules & Gap Analysis ────────────────────────────────────────
+
+CAUSATION_RULES = {
+    "gross_margin": {
+        "root_causes": [
+            "COGS higher than projected",
+            "Revenue mix shift toward lower-margin products",
+            "Pricing pressure from competitive dynamics",
+        ],
+        "downstream_impact": ["operating_margin", "ebitda_margin", "contribution_margin"],
+        "corrective_actions": [
+            "Review pricing strategy by segment",
+            "Analyze COGS by product line",
+            "Evaluate vendor contracts for renegotiation",
+        ],
+    },
+    "operating_margin": {
+        "root_causes": [
+            "Gross margin compression flowing through",
+            "Operating expenses above projected levels",
+            "Revenue below projection without proportional cost reduction",
+        ],
+        "downstream_impact": ["ebitda_margin"],
+        "corrective_actions": [
+            "Identify top 3 discretionary opex line items for reduction",
+            "Align headcount plan to revised revenue forecast",
+            "Review variable cost scaling assumptions",
+        ],
+    },
+    "ebitda_margin": {
+        "root_causes": [
+            "Operating margin shortfall flowing through",
+            "Depreciation or amortization above plan",
+        ],
+        "downstream_impact": [],
+        "corrective_actions": [
+            "Review D&A schedule against asset plan",
+            "Address operating margin root causes upstream",
+        ],
+    },
+    "churn_rate": {
+        "root_causes": [
+            "Customer satisfaction decline",
+            "Competitive pressure or pricing mismatch",
+            "Product-market fit gap in recent cohorts",
+        ],
+        "downstream_impact": ["nrr", "revenue_growth", "arr_growth", "burn_multiple"],
+        "corrective_actions": [
+            "Implement proactive churn detection triggers",
+            "Schedule at-risk account reviews with CS team",
+            "Review onboarding and product adoption metrics",
+        ],
+    },
+    "nrr": {
+        "root_causes": [
+            "Contraction in existing accounts",
+            "Higher than projected churn",
+            "Upsell and expansion underperformance",
+        ],
+        "downstream_impact": ["revenue_growth", "arr_growth"],
+        "corrective_actions": [
+            "Activate expansion playbooks for top accounts",
+            "Review upsell trigger criteria and qualification",
+            "Audit renewal pipeline health and coverage",
+        ],
+    },
+    "dso": {
+        "root_causes": [
+            "Collections process delays",
+            "Loosened credit terms or approval",
+            "Customer cash flow difficulties",
+        ],
+        "downstream_impact": ["cash_conv_cycle"],
+        "corrective_actions": [
+            "Tighten credit approval criteria",
+            "Automate payment reminders at 30/45/60 days",
+            "Offer early payment discounts to accelerate collection",
+        ],
+    },
+    "cash_conv_cycle": {
+        "root_causes": [
+            "DSO extending beyond projection",
+            "Inventory days or payables days deteriorating",
+        ],
+        "downstream_impact": [],
+        "corrective_actions": [
+            "Address DSO root causes upstream",
+            "Negotiate extended payment terms with key vendors",
+        ],
+    },
+    "revenue_growth": {
+        "root_causes": [
+            "Pipeline shortfall vs plan",
+            "Lower close rates than projected",
+            "Deals slipping to future quarters",
+        ],
+        "downstream_impact": ["arr_growth", "operating_leverage", "burn_multiple", "sales_efficiency"],
+        "corrective_actions": [
+            "Review pipeline coverage ratio (target: 3x quota)",
+            "Identify top deal acceleration opportunities",
+            "Reassess pricing and packaging to improve win rates",
+        ],
+    },
+    "arr_growth": {
+        "root_causes": [
+            "New ARR below projection",
+            "Expansion ARR underperforming",
+            "Churn offsetting new bookings",
+        ],
+        "downstream_impact": ["burn_multiple", "sales_efficiency"],
+        "corrective_actions": [
+            "Review new logo pipeline and close rate",
+            "Strengthen expansion motion in CS",
+            "Address churn to improve net ARR",
+        ],
+    },
+    "opex_ratio": {
+        "root_causes": [
+            "Headcount growth ahead of plan",
+            "Discretionary spend above budget",
+            "Unplanned infrastructure or tooling costs",
+        ],
+        "downstream_impact": ["operating_margin", "ebitda_margin"],
+        "corrective_actions": [
+            "Conduct discretionary spend audit",
+            "Freeze non-critical hiring pending revenue recovery",
+            "Review SaaS tool consolidation opportunities",
+        ],
+    },
+    "contribution_margin": {
+        "root_causes": [
+            "Variable costs above projection",
+            "Gross margin compression flowing through",
+        ],
+        "downstream_impact": [],
+        "corrective_actions": [
+            "Analyze variable cost drivers by product",
+            "Review unit economics assumptions in pricing model",
+        ],
+    },
+    "burn_multiple": {
+        "root_causes": [
+            "Revenue growth below projection",
+            "Sales and marketing spend above plan",
+        ],
+        "downstream_impact": ["cac_payback"],
+        "corrective_actions": [
+            "Tighten sales efficiency KPI thresholds",
+            "Review marketing channel ROI and reallocate budget",
+            "Implement spend approval gates for non-essential items",
+        ],
+    },
+    "cac_payback": {
+        "root_causes": [
+            "CAC higher than projected",
+            "ARPU below projection",
+            "Gross margin compression reducing denominator",
+        ],
+        "downstream_impact": [],
+        "corrective_actions": [
+            "Optimize marketing channel mix toward highest-efficiency sources",
+            "Review ICP definition and targeting criteria",
+            "Improve sales cycle conversion at each funnel stage",
+        ],
+    },
+    "sales_efficiency": {
+        "root_causes": [
+            "Revenue per S&M dollar below plan",
+            "Extended sales cycles",
+            "Pipeline conversion declining",
+        ],
+        "downstream_impact": ["burn_multiple"],
+        "corrective_actions": [
+            "Review rep performance metrics and identify coaching needs",
+            "Implement deal coaching for stalled opportunities",
+            "Reassess territory and quota alignment",
+        ],
+    },
+    "revenue_quality": {
+        "root_causes": [
+            "Mix shift toward non-recurring revenue",
+            "One-time services or professional services growing faster than recurring",
+        ],
+        "downstream_impact": ["nrr", "arr_growth"],
+        "corrective_actions": [
+            "Review product mix and incentivize recurring SKUs",
+            "Evaluate services attach rates vs subscription ARR",
+        ],
+    },
+    "recurring_revenue": {
+        "root_causes": [
+            "Subscription churn reducing recurring base",
+            "New business weighted toward non-recurring",
+        ],
+        "downstream_impact": ["revenue_quality", "nrr"],
+        "corrective_actions": [
+            "Strengthen subscription renewal process",
+            "Review product packaging to increase recurring attach",
+        ],
+    },
+    "customer_concentration": {
+        "root_causes": [
+            "Top customer growing faster than portfolio average",
+            "Diversification efforts below plan",
+        ],
+        "downstream_impact": [],
+        "corrective_actions": [
+            "Accelerate mid-market and SMB acquisition",
+            "Review top 5 customer dependency and succession plans",
+        ],
+    },
+    "operating_leverage": {
+        "root_causes": [
+            "Revenue growth below plan reducing fixed cost absorption",
+            "Fixed cost base growing faster than revenue",
+        ],
+        "downstream_impact": ["operating_margin", "ebitda_margin"],
+        "corrective_actions": [
+            "Maximize fixed cost leverage by growing revenue",
+            "Audit fixed cost commitments for renegotiation opportunities",
+        ],
+    },
+}
+
+def compute_gap_status(gap_pct: float) -> str:
+    """
+    gap_pct: positive = actual beats projection, negative = behind projection.
+    For 'higher' KPIs: gap_pct = (actual - projected) / abs(projected) * 100
+    For 'lower'  KPIs: gap_pct = (projected - actual) / abs(projected) * 100
+    Thresholds: green ≥ -3%, yellow ≥ -8%, red < -8%
+    """
+    if gap_pct >= -3:
+        return "green"
+    elif gap_pct >= -8:
+        return "yellow"
+    return "red"
+
 
 # ─── KPI Computation Engine ─────────────────────────────────────────────────
 
@@ -440,6 +692,200 @@ def delete_upload(upload_id: int):
     conn.commit()
     conn.close()
     return {"deleted": upload_id}
+
+# ─── Projection Endpoints ────────────────────────────────────────────────────
+
+@app.post("/api/projection/upload", tags=["Projection"])
+async def upload_projection(file: UploadFile = File(...)):
+    """Upload a projection CSV (same format as actuals). Replaces any existing projection."""
+    if not file.filename.endswith((".csv", ".CSV")):
+        raise HTTPException(400, "Only CSV files are accepted.")
+    content = await file.read()
+    try:
+        df = pd.read_csv(io.StringIO(content.decode("utf-8", errors="replace")))
+    except Exception as e:
+        raise HTTPException(400, f"Could not parse CSV: {e}")
+
+    col_map     = normalize_columns(df)
+    monthly_agg = aggregate_monthly(df, col_map)
+
+    conn = get_db()
+    # Delete-before-insert: enforce single active projection
+    conn.execute("DELETE FROM projection_monthly_data")
+    conn.execute("DELETE FROM projection_uploads")
+
+    cur = conn.execute(
+        "INSERT INTO projection_uploads (filename, uploaded_at, row_count, detected_columns) VALUES (?,?,?,?)",
+        (file.filename, datetime.utcnow().isoformat(), len(df), json.dumps(col_map))
+    )
+    upload_id = cur.lastrowid
+
+    for _, row in monthly_agg.iterrows():
+        yr  = int(row["year"])
+        mo  = int(row["month"])
+        row_dict = {k: (None if (isinstance(v, float) and np.isnan(v)) else v)
+                    for k, v in row.items() if k not in ("year", "month")}
+        conn.execute(
+            "INSERT INTO projection_monthly_data (projection_upload_id, year, month, data_json) VALUES (?,?,?,?)",
+            (upload_id, yr, mo, json.dumps(row_dict))
+        )
+    conn.commit()
+    conn.close()
+
+    return {
+        "upload_id":        upload_id,
+        "filename":         file.filename,
+        "rows_processed":   len(df),
+        "months_detected":  len(monthly_agg),
+        "columns_detected": col_map,
+        "kpis_computed":    [k for k in monthly_agg.columns if k not in ("year", "month")],
+        "message":          f"Projection uploaded: {len(df)} rows across {len(monthly_agg)} months.",
+    }
+
+
+@app.get("/api/projection/monthly", tags=["Projection"])
+def projection_monthly_kpis(year: Optional[int] = None):
+    """Return projected monthly KPI values. Optionally filter by year."""
+    conn = get_db()
+    query  = "SELECT * FROM projection_monthly_data"
+    params = []
+    if year:
+        query += " WHERE year = ?"
+        params.append(year)
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    result = []
+    for row in rows:
+        result.append({"year": row["year"], "month": row["month"], "kpis": json.loads(row["data_json"])})
+    return sorted(result, key=lambda x: (x["year"], x["month"]))
+
+
+@app.get("/api/projection/uploads", tags=["Projection"])
+def list_projection_uploads():
+    """List all projection uploads."""
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM projection_uploads ORDER BY id DESC").fetchall()
+    conn.close()
+    return [{"id": r["id"], "filename": r["filename"], "uploaded_at": r["uploaded_at"],
+             "row_count": r["row_count"], "columns": json.loads(r["detected_columns"])} for r in rows]
+
+
+@app.delete("/api/projection/uploads/{upload_id}", tags=["Projection"])
+def delete_projection_upload(upload_id: int):
+    """Remove a projection upload and its associated monthly data."""
+    conn = get_db()
+    conn.execute("DELETE FROM projection_monthly_data WHERE projection_upload_id = ?", (upload_id,))
+    conn.execute("DELETE FROM projection_uploads WHERE id = ?", (upload_id,))
+    conn.commit()
+    conn.close()
+    return {"deleted": upload_id}
+
+
+@app.get("/api/bridge", tags=["Projection"])
+def bridge_analysis():
+    """
+    Compare projected vs actual KPIs month-by-month.
+    Returns gap analysis, status (green/yellow/red), and causation rules for each KPI.
+    """
+    conn = get_db()
+    proj_rows   = conn.execute("SELECT * FROM projection_monthly_data").fetchall()
+    actual_rows = conn.execute("SELECT * FROM monthly_data").fetchall()
+    conn.close()
+
+    if not proj_rows:
+        return {"has_projection": False}
+
+    # Build projection lookup: (year, month) -> kpi_dict
+    proj_by_period: dict = {}
+    for row in proj_rows:
+        proj_by_period[(row["year"], row["month"])] = json.loads(row["data_json"])
+
+    # Build actuals lookup: (year, month) -> kpi_dict (merge if multiple uploads)
+    actual_by_period: dict = {}
+    for row in actual_rows:
+        key = (row["year"], row["month"])
+        actual_by_period.setdefault(key, {})
+        actual_by_period[key].update(json.loads(row["data_json"]))
+
+    # Find overlapping periods
+    overlap = sorted(set(proj_by_period.keys()) & set(actual_by_period.keys()))
+    if not overlap:
+        return {"has_projection": True, "has_overlap": False, "summary": {}, "kpis": {}}
+
+    # Build per-KPI bridge
+    kpis_out: dict = {}
+    for kdef in KPI_DEFS:
+        key       = kdef["key"]
+        direction = kdef["direction"]
+        months_data: dict = {}
+
+        for (yr, mo) in overlap:
+            proj_val   = proj_by_period[(yr, mo)].get(key)
+            actual_val = actual_by_period[(yr, mo)].get(key)
+            if proj_val is None or actual_val is None:
+                continue
+            if proj_val == 0:
+                continue
+
+            # gap_pct: positive = actual beats projection
+            if direction == "higher":
+                gap_pct = (actual_val - proj_val) / abs(proj_val) * 100
+            else:
+                gap_pct = (proj_val - actual_val) / abs(proj_val) * 100
+
+            period_key = f"{yr}-{mo:02d}"
+            months_data[period_key] = {
+                "actual":    round(float(actual_val), 2),
+                "projected": round(float(proj_val), 2),
+                "gap":       round(float(actual_val - proj_val), 2),
+                "gap_pct":   round(float(gap_pct), 2),
+            }
+
+        if not months_data:
+            continue
+
+        gap_pcts      = [v["gap_pct"]   for v in months_data.values()]
+        actuals       = [v["actual"]    for v in months_data.values()]
+        projecteds    = [v["projected"] for v in months_data.values()]
+        avg_actual    = round(float(np.mean(actuals)), 2)
+        avg_projected = round(float(np.mean(projecteds)), 2)
+        avg_gap       = round(float(avg_actual - avg_projected), 2)
+        avg_gap_pct   = round(float(np.mean(gap_pcts)), 2)
+        overall_status = compute_gap_status(avg_gap_pct)
+
+        kpis_out[key] = {
+            "name":           kdef["name"],
+            "unit":           kdef["unit"],
+            "direction":      direction,
+            "avg_actual":     avg_actual,
+            "avg_projected":  avg_projected,
+            "avg_gap":        avg_gap,
+            "avg_gap_pct":    avg_gap_pct,
+            "overall_status": overall_status,
+            "months":         months_data,
+            "causation":      CAUSATION_RULES.get(key, {
+                "root_causes": [], "downstream_impact": [], "corrective_actions": []
+            }),
+        }
+
+    # Tally summary counts by avg_gap_pct threshold
+    on_track = sum(1 for k in kpis_out.values() if -3 <= k["avg_gap_pct"])
+    behind   = sum(1 for k in kpis_out.values() if k["avg_gap_pct"] < -3)
+    ahead    = sum(1 for k in kpis_out.values() if k["avg_gap_pct"] >= 3)
+    on_track = on_track - ahead  # "on_track" = within ±3%
+
+    return {
+        "has_projection":  True,
+        "has_overlap":     True,
+        "summary": {
+            "on_track":              on_track,
+            "behind":                behind,
+            "ahead":                 ahead,
+            "total_months_compared": len(overlap),
+        },
+        "kpis": kpis_out,
+    }
+
 
 @app.put("/api/targets/{kpi_key}", tags=["Configuration"])
 def update_target(kpi_key: str, target_value: float):
@@ -822,6 +1268,59 @@ async def query_kpi(payload: dict):
     months_of_data = len(rows)
     kpis_tracked   = len([k for k in KPI_DEFS if kpi_monthly.get(k["key"])])
 
+    # ── Projection context (if available) ─────────────────────────────────────
+    proj_context_lines = []
+    try:
+        proj_conn  = get_db()
+        proj_rows  = proj_conn.execute("SELECT * FROM projection_monthly_data").fetchall()
+        proj_conn.close()
+        if proj_rows:
+            proj_by_period: dict = {}
+            for pr in proj_rows:
+                proj_by_period[(pr["year"], pr["month"])] = json.loads(pr["data_json"])
+
+            actual_by_period2: dict = {}
+            for row in rows:
+                k2 = (row["year"], row["month"])
+                actual_by_period2.setdefault(k2, {})
+                actual_by_period2[k2].update(json.loads(row["data_json"]))
+
+            overlap2 = sorted(set(proj_by_period.keys()) & set(actual_by_period2.keys()))
+            if overlap2:
+                for kdef in KPI_DEFS:
+                    key2      = kdef["key"]
+                    direction2 = kdef["direction"]
+                    gap_pcts2 = []
+                    actuals2  = []
+                    projs2    = []
+                    for (yr2, mo2) in overlap2:
+                        pv = proj_by_period[(yr2, mo2)].get(key2)
+                        av = actual_by_period2[(yr2, mo2)].get(key2)
+                        if pv and av and pv != 0:
+                            actuals2.append(av)
+                            projs2.append(pv)
+                            if direction2 == "higher":
+                                gap_pcts2.append((av - pv) / abs(pv) * 100)
+                            else:
+                                gap_pcts2.append((pv - av) / abs(pv) * 100)
+                    if actuals2:
+                        avg_a2 = round(float(np.mean(actuals2)), 2)
+                        avg_p2 = round(float(np.mean(projs2)), 2)
+                        avg_g2 = round(float(np.mean(gap_pcts2)), 2)
+                        status2 = compute_gap_status(avg_g2)
+                        proj_context_lines.append(
+                            f"- {kdef['name']}: actual avg={avg_a2}, projected avg={avg_p2}, gap={avg_g2:+.1f}% [{status2}]"
+                        )
+    except Exception:
+        pass
+
+    proj_section = ""
+    if proj_context_lines:
+        proj_section = f"""
+PROJECTION vs ACTUAL CONTEXT ({len(proj_context_lines)} KPIs compared):
+{chr(10).join(proj_context_lines)}
+"""
+
     system_prompt = f"""You are an expert financial analyst embedded in the Axiom KPI Intelligence Dashboard.
 You have access to the following FY 2025 organisational performance data:
 
@@ -830,11 +1329,12 @@ Status breakdown: {status_counts.get('green', 0)} on target, {status_counts.get(
 
 KPI DATA:
 {chr(10).join(kpi_lines)}
-
+{proj_section}
 Rules:
 - Answer concisely (2-4 sentences max, or a short bullet list)
 - Always cite specific numbers and months when relevant
 - Flag critical KPIs (status=red) clearly
+- When projection data is available, reference the gap percentages and status in your analysis
 - Do NOT make up data beyond what is provided above
 - Respond in plain text — no markdown headers, no asterisks, no bold"""
 

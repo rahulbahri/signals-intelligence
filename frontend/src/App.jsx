@@ -3,7 +3,7 @@ import axios from 'axios'
 import {
   LayoutDashboard, Fingerprint, TrendingUp,
   Upload, Code2, RefreshCw, ChevronRight,
-  Activity
+  Activity, GitBranch
 } from 'lucide-react'
 import Scorecard from './components/Scorecard.jsx'
 import Fingerprint2 from './components/Fingerprint.jsx'
@@ -13,11 +13,13 @@ import APIReference from './components/APIReference.jsx'
 import SummaryBar from './components/SummaryBar.jsx'
 import KpiDetailPanel from './components/KpiDetailPanel.jsx'
 import AiQueryPanel from './components/AiQueryPanel.jsx'
+import ProjectionBridge from './components/ProjectionBridge.jsx'
 
 const TABS = [
   { id: 'dashboard',   label: 'Command Center',    Icon: LayoutDashboard },
   { id: 'fingerprint', label: 'Org Fingerprint',   Icon: Fingerprint     },
   { id: 'trends',      label: 'Monthly Trends',    Icon: TrendingUp      },
+  { id: 'projection',  label: 'Bridge Analysis',   Icon: GitBranch       },
   { id: 'upload',      label: 'Data Upload',        Icon: Upload          },
   { id: 'api',         label: 'API Reference',      Icon: Code2           },
 ]
@@ -26,30 +28,37 @@ const PAGE_TITLES = {
   dashboard:   'Actionable Intelligence Command Center',
   fingerprint: 'Organisational Fingerprint',
   trends:      'Monthly KPI Trends',
+  projection:  'Projection vs Actual — Bridge Analysis',
   upload:      'Data Upload',
   api:         'API Reference',
 }
 
 export default function App() {
-  const [tab, setTab]                 = useState('dashboard')
-  const [summary, setSummary]         = useState(null)
-  const [kpiDefs, setKpiDefs]         = useState([])
-  const [monthly, setMonthly]         = useState([])
-  const [fingerprint, setFingerprint] = useState([])
-  const [loading, setLoading]         = useState(true)
-  const [selectedKpi, setSelectedKpi] = useState(null)
+  const [tab, setTab]                         = useState('dashboard')
+  const [summary, setSummary]                 = useState(null)
+  const [kpiDefs, setKpiDefs]                 = useState([])
+  const [monthly, setMonthly]                 = useState([])
+  const [fingerprint, setFingerprint]         = useState([])
+  const [loading, setLoading]                 = useState(true)
+  const [selectedKpi, setSelectedKpi]         = useState(null)
+  const [projectionMonthly, setProjectionMonthly] = useState([])
+  const [bridgeData, setBridgeData]           = useState(null)
+  const [prefillQuestion, setPrefillQuestion] = useState(null)
 
   async function loadAll() {
     setLoading(true)
     try {
-      const [s, k, m, f] = await Promise.all([
+      const [s, k, m, f, b, pm] = await Promise.all([
         axios.get('/api/summary'),
         axios.get('/api/kpi-definitions'),
         axios.get('/api/monthly'),
         axios.get('/api/fingerprint'),
+        axios.get('/api/bridge'),
+        axios.get('/api/projection/monthly'),
       ])
       setSummary(s.data); setKpiDefs(k.data)
       setMonthly(m.data); setFingerprint(f.data)
+      setBridgeData(b.data); setProjectionMonthly(pm.data)
     } catch (e) { console.error(e) }
     setLoading(false)
   }
@@ -140,7 +149,11 @@ export default function App() {
           </nav>
 
           {/* AI Query Panel */}
-          <AiQueryPanel />
+          <AiQueryPanel
+            bridgeData={bridgeData}
+            prefillQuestion={prefillQuestion}
+            onPrefillConsumed={() => setPrefillQuestion(null)}
+          />
         </div>
 
         {/* Footer */}
@@ -215,13 +228,29 @@ export default function App() {
               {tab === 'dashboard'   && <><SummaryBar summary={summary} onRefresh={loadAll} onSeed={seedDemo}/><Scorecard fingerprint={fingerprint} kpiDefs={kpiDefs} onKpiClick={openKpi}/></>}
               {tab === 'fingerprint' && <Fingerprint2 fingerprint={fingerprint} onKpiClick={openKpi}/>}
               {tab === 'trends'      && <MonthlyTrend fingerprint={fingerprint} monthly={monthly} onKpiClick={openKpi}/>}
+              {tab === 'projection'  && (
+                <ProjectionBridge
+                  bridgeData={bridgeData}
+                  projectionMonthly={projectionMonthly}
+                  onUploaded={loadAll}
+                  onAskAnika={(kpiName) => setPrefillQuestion(`Why is ${kpiName} below projection?`)}
+                />
+              )}
               {tab === 'upload'      && <CSVUpload onUploaded={loadAll}/>}
               {tab === 'api'         && <APIReference kpiDefs={kpiDefs}/>}
             </>
           )}
 
-          {!loading && noData && tab === 'upload' && <CSVUpload onUploaded={loadAll}/>}
-          {!loading && noData && tab === 'api'    && <APIReference kpiDefs={kpiDefs}/>}
+          {!loading && noData && tab === 'upload'     && <CSVUpload onUploaded={loadAll}/>}
+          {!loading && noData && tab === 'api'        && <APIReference kpiDefs={kpiDefs}/>}
+          {!loading && noData && tab === 'projection' && (
+            <ProjectionBridge
+              bridgeData={bridgeData}
+              projectionMonthly={projectionMonthly}
+              onUploaded={loadAll}
+              onAskAnika={(kpiName) => setPrefillQuestion(`Why is ${kpiName} below projection?`)}
+            />
+          )}
         </main>
       </div>
 
