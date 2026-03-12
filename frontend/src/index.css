@@ -6,16 +6,14 @@
 
 /* ── Base ──────────────────────────────────────────────── */
 /*
-  Body: #F0F2F7 — a clean neutral blue-gray (Retool / Figma range).
-  Neutral enough to not shift pink/purple on warm monitors, while
-  still giving white cards clear depth separation.
+  Body: #E6F2FF — light sky blue canvas.
 */
-body { background: #F0F2F7; color: #0f172a; }
+body { background: #E6F2FF; color: #0f172a; }
 
 /* ── Scrollbars ─────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: #DDE1EA; }
-::-webkit-scrollbar-thumb { background: #9AAABE; border-radius: 3px; }
+::-webkit-scrollbar-track { background: #C8DFF5; }
+::-webkit-scrollbar-thumb { background: #7AABDA; border-radius: 3px; }
 
 /* ── Sidebar ────────────────────────────────────────────── */
 /*
