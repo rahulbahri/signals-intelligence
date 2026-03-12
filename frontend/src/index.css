@@ -6,17 +6,16 @@
 
 /* ── Base ──────────────────────────────────────────────── */
 /*
-  Body: #EBF0FA — a warm indigo-blue off-white (vs cold #f0f4f8).
-  Research: Top BI tools (Linear, Hex, Amplitude) use a subtle
-  blue-tinted off-white that makes white cards "pop" with depth
-  while feeling more refined than a clinical cool gray.
+  Body: #F0F2F7 — a clean neutral blue-gray (Retool / Figma range).
+  Neutral enough to not shift pink/purple on warm monitors, while
+  still giving white cards clear depth separation.
 */
-body { background: #EBF0FA; color: #0f172a; }
+body { background: #F0F2F7; color: #0f172a; }
 
 /* ── Scrollbars ─────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: #D8E1EF; }
-::-webkit-scrollbar-thumb { background: #8A9EC0; border-radius: 3px; }
+::-webkit-scrollbar-track { background: #DDE1EA; }
+::-webkit-scrollbar-thumb { background: #9AAABE; border-radius: 3px; }
 
 /* ── Sidebar ────────────────────────────────────────────── */
 /*
