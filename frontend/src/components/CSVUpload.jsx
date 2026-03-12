@@ -1,185 +1,317 @@
 import { useState, useRef } from 'react'
 import axios from 'axios'
-import { Upload, CheckCircle, AlertCircle, FileText, Trash2 } from 'lucide-react'
+import { Upload, CheckCircle, AlertCircle, FileText, Trash2, GitBranch, Activity, AlertTriangle } from 'lucide-react'
 
 export default function CSVUpload({ onUploaded }) {
-  const [dragging, setDragging]   = useState(false)
-  const [result,   setResult]     = useState(null)
-  const [error,    setError]      = useState(null)
-  const [loading,  setLoading]    = useState(false)
-  const [uploads,  setUploads]    = useState([])
+
+  // ── Actuals state ────────────────────────────────────────────────────────
+  const [dragging, setDragging] = useState(false)
+  const [result,   setResult]   = useState(null)
+  const [error,    setError]    = useState(null)
+  const [loading,  setLoading]  = useState(false)
+  const [uploads,  setUploads]  = useState([])
   const fileRef = useRef()
 
   async function fetchUploads() {
-    try {
-      const r = await axios.get('/api/uploads')
-      setUploads(r.data)
-    } catch {}
+    try { const r = await axios.get('/api/uploads'); setUploads(r.data) } catch {}
   }
-
-  useState(() => { fetchUploads() }, [])
-
   async function handleFile(file) {
     if (!file?.name.endsWith('.csv')) { setError('Please upload a .csv file'); return }
     setLoading(true); setResult(null); setError(null)
-    const fd = new FormData()
-    fd.append('file', file)
+    const fd = new FormData(); fd.append('file', file)
     try {
       const r = await axios.post('/api/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
-      setResult(r.data)
-      onUploaded?.()
-      fetchUploads()
-    } catch(e) {
-      setError(e.response?.data?.detail || 'Upload failed')
-    }
+      setResult(r.data); onUploaded?.(); fetchUploads()
+    } catch(e) { setError(e.response?.data?.detail || 'Upload failed') }
     setLoading(false)
   }
-
   async function deleteUpload(id) {
-    await axios.delete(`/api/uploads/${id}`)
-    fetchUploads()
-    onUploaded?.()
+    await axios.delete(`/api/uploads/${id}`); fetchUploads(); onUploaded?.()
   }
 
+  // ── Projection state ─────────────────────────────────────────────────────
+  const [projDragging, setProjDragging] = useState(false)
+  const [projResult,   setProjResult]   = useState(null)
+  const [projError,    setProjError]    = useState(null)
+  const [projLoading,  setProjLoading]  = useState(false)
+  const [projSeeding,  setProjSeeding]  = useState(false)
+  const [projUploads,  setProjUploads]  = useState([])
+  const projFileRef = useRef()
+
+  async function fetchProjUploads() {
+    try { const r = await axios.get('/api/projection/uploads'); setProjUploads(r.data) } catch {}
+  }
+  async function handleProjFile(file) {
+    if (!file?.name.endsWith('.csv')) { setProjError('Please upload a .csv file'); return }
+    setProjLoading(true); setProjResult(null); setProjError(null)
+    const fd = new FormData(); fd.append('file', file)
+    try {
+      const r = await axios.post('/api/projection/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      setProjResult(r.data); onUploaded?.(); fetchProjUploads()
+    } catch(e) { setProjError(e.response?.data?.detail || 'Upload failed') }
+    setProjLoading(false)
+  }
+  async function deleteProjUpload(id) {
+    await axios.delete(`/api/projection/uploads/${id}`); fetchProjUploads(); onUploaded?.()
+  }
+  async function seedDemoProjection() {
+    setProjSeeding(true); setProjError(null)
+    try { await axios.get('/api/seed-demo-projection'); fetchProjUploads(); onUploaded?.() }
+    catch { setProjError('Seed failed') }
+    setProjSeeding(false)
+  }
+
+  // Fetch both on mount
+  useState(() => { fetchUploads(); fetchProjUploads() }, [])
+
   return (
-    <div className="space-y-6 max-w-3xl">
-      <div>
-        <h2 className="text-slate-800 font-semibold text-base mb-1 flex items-center gap-2">
-          <span className="w-1 h-5 bg-[#0055A4] rounded-full"/>
-          Data Upload
-        </h2>
-        <p className="text-slate-500 text-xs">
-          Upload a CSV to recompute KPIs. Column names are auto-detected.
-        </p>
-      </div>
+    <div className="space-y-10 max-w-3xl">
 
-      {/* Drop zone */}
-      <div
-        onDragOver={e => { e.preventDefault(); setDragging(true) }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={e => { e.preventDefault(); setDragging(false); handleFile(e.dataTransfer.files[0]) }}
-        onClick={() => fileRef.current?.click()}
-        className={`border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all ${
-          dragging
-            ? 'border-[#0055A4] bg-blue-50'
-            : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-        }`}
-      >
-        <input ref={fileRef} type="file" accept=".csv" className="hidden"
-          onChange={e => handleFile(e.target.files[0])}/>
-        {loading
-          ? <div className="flex flex-col items-center gap-3">
-              <div className="w-10 h-10 border-4 border-[#0055A4] border-t-transparent rounded-full animate-spin"/>
-              <p className="text-slate-500 text-sm">Processing…</p>
-            </div>
-          : <div className="flex flex-col items-center gap-3">
-              <Upload size={36} className="text-slate-400"/>
-              <p className="text-slate-700 font-medium">Drop CSV here or click to browse</p>
-              <p className="text-slate-400 text-xs">Accepts: date, revenue, cogs, opex, ar, mrr, arr, customers, churn, is_recurring, sm_allocated, headcount</p>
-            </div>
-        }
-      </div>
-
-      {/* Result */}
-      {result && (
-        <div className="card p-5 border-l-4 border-l-emerald-500 bg-emerald-50/60">
-          <div className="flex items-center gap-2 mb-3">
-            <CheckCircle size={16} className="text-emerald-600"/>
-            <span className="text-emerald-700 font-medium text-sm">{result.message}</span>
+      {/* ══ Section 1: Actuals Data ═══════════════════════════════════════ */}
+      <div className="space-y-5">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-1 h-5 bg-[#0055A4] rounded-full"/>
+            <h2 className="text-slate-800 font-semibold text-base">Actuals Data</h2>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              ['Rows',    result.rows_processed],
-              ['Months',  result.months_detected],
-              ['KPIs',    result.kpis_computed?.length],
-              ['Upload',  `#${result.upload_id}`],
-            ].map(([l, v]) => (
-              <div key={l} className="bg-white rounded-lg p-3 text-center border border-emerald-100">
-                <div className="text-slate-800 font-bold">{v}</div>
-                <div className="text-slate-500 text-xs">{l}</div>
+          <p className="text-slate-500 text-xs pl-3">
+            Upload a CSV of raw transactions to compute all 18 KPIs. Column names are auto-detected.
+          </p>
+        </div>
+
+        {/* Drop zone */}
+        <div
+          onDragOver={e => { e.preventDefault(); setDragging(true) }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={e => { e.preventDefault(); setDragging(false); handleFile(e.dataTransfer.files[0]) }}
+          onClick={() => fileRef.current?.click()}
+          className={`border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all ${
+            dragging ? 'border-[#0055A4] bg-blue-50' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+          }`}
+        >
+          <input ref={fileRef} type="file" accept=".csv" className="hidden"
+            onChange={e => handleFile(e.target.files[0])}/>
+          {loading
+            ? <div className="flex flex-col items-center gap-3">
+                <div className="w-10 h-10 border-4 border-[#0055A4] border-t-transparent rounded-full animate-spin"/>
+                <p className="text-slate-500 text-sm">Processing…</p>
               </div>
-            ))}
-          </div>
-          {result.kpis_computed?.length > 0 && (
-            <div className="mt-3">
-              <p className="text-slate-500 text-xs mb-1">KPIs computed:</p>
-              <div className="flex flex-wrap gap-1.5">
-                {result.kpis_computed.map(k => (
-                  <span key={k} className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-xs font-medium">{k}</span>
-                ))}
+            : <div className="flex flex-col items-center gap-3">
+                <Upload size={36} className="text-slate-400"/>
+                <p className="text-slate-700 font-medium">Drop CSV here or click to browse</p>
+                <p className="text-slate-400 text-xs">
+                  Accepts: date, revenue, cogs, opex, ar, mrr, arr, customers, churn, is_recurring, sm_allocated, headcount
+                </p>
               </div>
+          }
+        </div>
+
+        {result && (
+          <div className="card p-5 border-l-4 border-l-emerald-500 bg-emerald-50/60">
+            <div className="flex items-center gap-2 mb-3">
+              <CheckCircle size={16} className="text-emerald-600"/>
+              <span className="text-emerald-700 font-medium text-sm">{result.message}</span>
             </div>
-          )}
-        </div>
-      )}
-
-      {error && (
-        <div className="card p-4 border-l-4 border-l-red-500 bg-red-50/60 flex items-center gap-2">
-          <AlertCircle size={16} className="text-red-500 shrink-0"/>
-          <p className="text-red-700 text-sm">{error}</p>
-        </div>
-      )}
-
-      {/* Expected format */}
-      <div className="card p-5">
-        <h3 className="text-slate-700 text-sm font-semibold mb-3">Expected CSV Format</h3>
-        <div className="overflow-x-auto">
-          <table className="text-xs text-left w-full">
-            <thead>
-              <tr className="border-b border-slate-100">
-                {['Column','Aliases','Required','Used For'].map(h => (
-                  <th key={h} className="py-2 pr-6 text-slate-500 font-semibold">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {[
-                ['date',        'transaction_date, month, period',       '✓', 'Month grouping'],
-                ['revenue',     'sales, total_revenue, net_revenue',     '✓', 'Most KPIs'],
-                ['cogs',        'cost_of_goods_sold, cost',              '',  'Gross/Operating Margin'],
-                ['opex',        'operating_expenses, sg_and_a',          '',  'Margins, OpEx Ratio'],
-                ['ar',          'accounts_receivable, receivables',      '',  'DSO, Cash Cycle'],
-                ['customers',   'customer_count, clients',               '',  'Churn, CAC Payback'],
-                ['churn',       'churned_customers, lost_customers',     '',  'Churn Rate, NRR'],
-                ['is_recurring','recurring (0/1)',                       '',  'Revenue Quality'],
-                ['sm_allocated','sales_marketing, s_m',                  '',  'Sales Efficiency'],
-                ['arr',         'annual_recurring_revenue',              '',  'ARR Growth'],
-              ].map(([col, alias, req, use]) => (
-                <tr key={col} className="hover:bg-slate-50/60">
-                  <td className="py-2 pr-6 text-[#0055A4] font-mono font-medium">{col}</td>
-                  <td className="py-2 pr-6 text-slate-500">{alias}</td>
-                  <td className="py-2 pr-6 text-amber-600 font-bold">{req}</td>
-                  <td className="py-2 pr-6 text-slate-600">{use}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Upload history */}
-      {uploads.length > 0 && (
-        <div className="card p-5">
-          <h3 className="text-slate-700 text-sm font-semibold mb-3">Upload History</h3>
-          <div className="space-y-1">
-            {uploads.map(u => (
-              <div key={u.id} className="flex items-center justify-between py-2.5 border-b border-slate-100 last:border-0">
-                <div className="flex items-center gap-2">
-                  <FileText size={14} className="text-slate-400"/>
-                  <div>
-                    <p className="text-slate-700 text-sm font-medium">{u.filename}</p>
-                    <p className="text-slate-400 text-xs">{u.row_count} rows · {new Date(u.uploaded_at).toLocaleString()}</p>
-                  </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[['Rows', result.rows_processed], ['Months', result.months_detected],
+                ['KPIs', result.kpis_computed?.length], ['Upload', `#${result.upload_id}`]].map(([l, v]) => (
+                <div key={l} className="bg-white rounded-lg p-3 text-center border border-emerald-100">
+                  <div className="text-slate-800 font-bold">{v}</div>
+                  <div className="text-slate-500 text-xs">{l}</div>
                 </div>
-                <button onClick={() => deleteUpload(u.id)}
-                  className="p-1.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors">
-                  <Trash2 size={13}/>
-                </button>
+              ))}
+            </div>
+            {result.kpis_computed?.length > 0 && (
+              <div className="mt-3">
+                <p className="text-slate-500 text-xs mb-1">KPIs computed:</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {result.kpis_computed.map(k => (
+                    <span key={k} className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-xs font-medium">{k}</span>
+                  ))}
+                </div>
               </div>
-            ))}
+            )}
+          </div>
+        )}
+
+        {error && (
+          <div className="card p-4 border-l-4 border-l-red-500 bg-red-50/60 flex items-center gap-2">
+            <AlertCircle size={16} className="text-red-500 shrink-0"/>
+            <p className="text-red-700 text-sm">{error}</p>
+          </div>
+        )}
+
+        {/* Expected format */}
+        <div className="card p-5">
+          <h3 className="text-slate-700 text-sm font-semibold mb-3">Expected CSV Format</h3>
+          <div className="overflow-x-auto">
+            <table className="text-xs text-left w-full">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  {['Column','Aliases','Required','Used For'].map(h => (
+                    <th key={h} className="py-2 pr-6 text-slate-500 font-semibold">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {[
+                  ['date',         'transaction_date, month, period',      '✓', 'Month grouping'],
+                  ['revenue',      'sales, total_revenue, net_revenue',    '✓', 'Most KPIs'],
+                  ['cogs',         'cost_of_goods_sold, cost',             '',  'Gross/Operating Margin'],
+                  ['opex',         'operating_expenses, sg_and_a',         '',  'Margins, OpEx Ratio'],
+                  ['ar',           'accounts_receivable, receivables',     '',  'DSO, Cash Cycle'],
+                  ['customers',    'customer_count, clients',              '',  'Churn, CAC Payback'],
+                  ['churn',        'churned_customers, lost_customers',    '',  'Churn Rate, NRR'],
+                  ['is_recurring', 'recurring (0/1)',                      '',  'Revenue Quality'],
+                  ['sm_allocated', 'sales_marketing, s_m',                 '',  'Sales Efficiency'],
+                  ['arr',          'annual_recurring_revenue',             '',  'ARR Growth'],
+                ].map(([col, alias, req, use]) => (
+                  <tr key={col} className="hover:bg-slate-50/60">
+                    <td className="py-2 pr-6 text-[#0055A4] font-mono font-medium">{col}</td>
+                    <td className="py-2 pr-6 text-slate-500">{alias}</td>
+                    <td className="py-2 pr-6 text-amber-600 font-bold">{req}</td>
+                    <td className="py-2 pr-6 text-slate-600">{use}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
-      )}
+
+        {/* Actuals history */}
+        {uploads.length > 0 && (
+          <div className="card p-5">
+            <h3 className="text-slate-700 text-sm font-semibold mb-3">Actuals Upload History</h3>
+            <div className="space-y-1">
+              {uploads.map(u => (
+                <div key={u.id} className="flex items-center justify-between py-2.5 border-b border-slate-100 last:border-0">
+                  <div className="flex items-center gap-2">
+                    <FileText size={14} className="text-slate-400"/>
+                    <div>
+                      <p className="text-slate-700 text-sm font-medium">{u.filename}</p>
+                      <p className="text-slate-400 text-xs">{u.row_count} rows · {new Date(u.uploaded_at).toLocaleString()}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => deleteUpload(u.id)}
+                    className="p-1.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors">
+                    <Trash2 size={13}/>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Divider ─────────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-3">
+        <div className="flex-1 h-px bg-slate-200"/>
+        <span className="text-[10px] text-slate-400 uppercase tracking-widest font-medium flex items-center gap-1.5">
+          <GitBranch size={11}/> Projection Data
+        </span>
+        <div className="flex-1 h-px bg-slate-200"/>
+      </div>
+
+      {/* ══ Section 2: Projection Data ════════════════════════════════════ */}
+      <div className="space-y-5">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-1 h-5 bg-blue-400 rounded-full"/>
+            <h2 className="text-slate-800 font-semibold text-base">Projection Data</h2>
+            <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+              replaces existing
+            </span>
+          </div>
+          <p className="text-slate-500 text-xs pl-3">
+            Upload a 12-month projection CSV (same format as actuals) to unlock Bridge Analysis — gap waterfall charts, root cause diagnostics, and corrective action playbooks.
+          </p>
+        </div>
+
+        {/* Projection drop zone */}
+        <div
+          onDragOver={e => { e.preventDefault(); setProjDragging(true) }}
+          onDragLeave={() => setProjDragging(false)}
+          onDrop={e => { e.preventDefault(); setProjDragging(false); handleProjFile(e.dataTransfer.files[0]) }}
+          onClick={() => projFileRef.current?.click()}
+          className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all ${
+            projDragging ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-blue-300 hover:bg-blue-50/40'
+          }`}
+        >
+          <input ref={projFileRef} type="file" accept=".csv" className="hidden"
+            onChange={e => handleProjFile(e.target.files[0])}/>
+          {projLoading
+            ? <div className="flex flex-col items-center gap-3">
+                <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"/>
+                <p className="text-slate-500 text-sm">Processing projection…</p>
+              </div>
+            : <div className="flex flex-col items-center gap-3">
+                <GitBranch size={32} className="text-slate-400"/>
+                <p className="text-slate-700 font-medium">Drop projection CSV here or click to browse</p>
+                <p className="text-slate-400 text-xs">Same format as actuals — 12-month plan transactions</p>
+              </div>
+          }
+        </div>
+
+        {/* Demo seed */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 h-px bg-slate-200"/>
+          <span className="text-[10px] text-slate-400 uppercase tracking-wide">or</span>
+          <div className="flex-1 h-px bg-slate-200"/>
+        </div>
+        <button
+          onClick={seedDemoProjection}
+          disabled={projSeeding}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-medium
+                     text-sm bg-[#0055A4]/8 border border-[#0055A4]/25 text-[#0055A4]
+                     hover:bg-[#0055A4]/15 transition-all disabled:opacity-50">
+          <Activity size={14}/>
+          {projSeeding ? 'Seeding…' : 'Load Demo Projection (12 months of optimistic plan data)'}
+        </button>
+
+        {projResult && (
+          <div className="card p-5 border-l-4 border-l-blue-500 bg-blue-50/60">
+            <div className="flex items-center gap-2 mb-2">
+              <CheckCircle size={16} className="text-blue-600"/>
+              <span className="text-blue-700 font-medium text-sm">
+                Projection loaded — {projResult.rows_processed} rows · {projResult.months_detected} months
+              </span>
+            </div>
+            <p className="text-blue-600 text-xs">Navigate to Bridge Analysis to view the projection vs actual comparison.</p>
+          </div>
+        )}
+
+        {projError && (
+          <div className="card p-4 border-l-4 border-l-red-500 bg-red-50/60 flex items-center gap-2">
+            <AlertTriangle size={16} className="text-red-500 shrink-0"/>
+            <p className="text-red-700 text-sm">{projError}</p>
+          </div>
+        )}
+
+        {/* Projection history */}
+        {projUploads.length > 0 && (
+          <div className="card p-5">
+            <h3 className="text-slate-700 text-sm font-semibold mb-1">Active Projection</h3>
+            <p className="text-slate-400 text-xs mb-3">Only one projection is active at a time. Uploading a new file replaces the current one.</p>
+            <div className="space-y-1">
+              {projUploads.map(u => (
+                <div key={u.id} className="flex items-center justify-between py-2.5 border-b border-slate-100 last:border-0">
+                  <div className="flex items-center gap-2">
+                    <GitBranch size={14} className="text-blue-400"/>
+                    <div>
+                      <p className="text-slate-700 text-sm font-medium">{u.filename}</p>
+                      <p className="text-slate-400 text-xs">{u.row_count.toLocaleString()} rows · {new Date(u.uploaded_at).toLocaleString()}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => deleteProjUpload(u.id)}
+                    className="p-1.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors">
+                    <Trash2 size={13}/>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

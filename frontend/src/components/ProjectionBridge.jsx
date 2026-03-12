@@ -1,12 +1,11 @@
-import { useState, useRef, useEffect } from 'react'
-import axios from 'axios'
+import { useState, useEffect } from 'react'
 import {
   BarChart, Bar, ComposedChart, Line, XAxis, YAxis,
   Tooltip, ResponsiveContainer, Cell, ReferenceLine
 } from 'recharts'
 import {
-  Upload, Trash2, AlertTriangle, TrendingDown, TrendingUp,
-  Minus, ChevronDown, ChevronUp, X, GitBranch, Activity,
+  AlertTriangle, TrendingDown, TrendingUp,
+  Minus, ChevronDown, ChevronUp, X, GitBranch,
   ArrowRight
 } from 'lucide-react'
 
@@ -36,144 +35,6 @@ function fmtVal(val, unit) {
   if (unit === 'days')   return `${val.toFixed(0)}d`
   if (unit === 'months') return `${val.toFixed(1)}mo`
   return val.toFixed(1)
-}
-
-// ─── UploadZone ─────────────────────────────────────────────────────────────
-function UploadZone({ onUploaded }) {
-  const [dragging, setDragging]   = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [seeding, setSeeding]     = useState(false)
-  const [error, setError]         = useState(null)
-  const [uploads, setUploads]     = useState([])
-  const inputRef = useRef(null)
-
-  async function fetchUploads() {
-    try {
-      const { data } = await axios.get('/api/projection/uploads')
-      setUploads(data)
-    } catch (e) { /* silent */ }
-  }
-
-  async function seedDemo() {
-    setSeeding(true); setError(null)
-    try {
-      await axios.get('/api/seed-demo-projection')
-      await fetchUploads()
-      onUploaded()
-    } catch (e) { setError('Seed failed.') }
-    setSeeding(false)
-  }
-
-  useState(() => { fetchUploads() }, [])
-
-  async function handleFile(file) {
-    if (!file || !file.name.match(/\.csv$/i)) {
-      setError('Please upload a CSV file.')
-      return
-    }
-    setError(null)
-    setUploading(true)
-    const form = new FormData()
-    form.append('file', file)
-    try {
-      await axios.post('/api/projection/upload', form, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      })
-      await fetchUploads()
-      onUploaded()
-    } catch (e) {
-      setError(e?.response?.data?.detail || 'Upload failed.')
-    }
-    setUploading(false)
-  }
-
-  async function deleteUpload(id) {
-    try {
-      await axios.delete(`/api/projection/uploads/${id}`)
-      await fetchUploads()
-      onUploaded()
-    } catch (e) { /* silent */ }
-  }
-
-  function onDrop(e) {
-    e.preventDefault(); setDragging(false)
-    handleFile(e.dataTransfer.files[0])
-  }
-
-  return (
-    <div className="card p-5 mb-6">
-      <div className="flex items-center gap-2 mb-4">
-        <Upload size={15} className="text-blue-500"/>
-        <h3 className="text-sm font-semibold text-slate-800">Upload Projection CSV</h3>
-        <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
-          replaces existing projection
-        </span>
-      </div>
-
-      <div
-        onDragOver={e => { e.preventDefault(); setDragging(true) }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={onDrop}
-        onClick={() => inputRef.current?.click()}
-        className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
-          dragging
-            ? 'border-blue-400 bg-blue-50'
-            : 'border-slate-200 hover:border-blue-300 hover:bg-blue-50/40'
-        }`}
-      >
-        <input ref={inputRef} type="file" accept=".csv" className="hidden"
-          onChange={e => handleFile(e.target.files[0])}/>
-        {uploading
-          ? <p className="text-slate-500 text-sm animate-pulse">Uploading projection…</p>
-          : <>
-              <Upload size={20} className="text-slate-400 mx-auto mb-2"/>
-              <p className="text-slate-700 text-sm font-medium">Drop projection CSV here</p>
-              <p className="text-slate-400 text-xs mt-1">Same format as actuals — raw transactions CSV</p>
-            </>
-        }
-      </div>
-
-      {error && (
-        <p className="mt-2 text-xs text-red-600 flex items-center gap-1.5">
-          <AlertTriangle size={11}/> {error}
-        </p>
-      )}
-
-      <div className="mt-3 flex items-center gap-3">
-        <div className="flex-1 h-px bg-slate-200"/>
-        <span className="text-[10px] text-slate-400 uppercase tracking-wide">or</span>
-        <div className="flex-1 h-px bg-slate-200"/>
-      </div>
-      <button
-        onClick={seedDemo}
-        disabled={seeding}
-        className="mt-3 w-full flex items-center justify-center gap-2 py-2 rounded-lg
-                   text-xs bg-[#0055A4]/8 border border-[#0055A4]/25 text-[#0055A4]
-                   hover:bg-[#0055A4]/15 transition-all disabled:opacity-50">
-        <Activity size={12}/>
-        {seeding ? 'Seeding…' : 'Load Demo Projection (12 months)'}
-      </button>
-
-      {uploads.length > 0 && (
-        <div className="mt-4 space-y-2">
-          <p className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Projection uploads</p>
-          {uploads.map(u => (
-            <div key={u.id} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
-              <div>
-                <p className="text-xs text-slate-700 font-medium">{u.filename}</p>
-                <p className="text-[10px] text-slate-400">{u.row_count.toLocaleString()} rows · {u.uploaded_at?.slice(0,10)}</p>
-              </div>
-              <button
-                onClick={() => deleteUpload(u.id)}
-                className="text-slate-400 hover:text-red-500 transition-colors p-1 rounded">
-                <Trash2 size={12}/>
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
 }
 
 // ─── SummaryBanner ──────────────────────────────────────────────────────────
@@ -684,7 +545,7 @@ function KpiBridgeCard({ kpiData, onAskAnika, onExpand }) {
 }
 
 // ─── Main ProjectionBridge ───────────────────────────────────────────────────
-export default function ProjectionBridge({ bridgeData, projectionMonthly, onUploaded, onAskAnika }) {
+export default function ProjectionBridge({ bridgeData, projectionMonthly, onUploaded, onAskAnika, onNavigateToUpload }) {
   const [detailKpi, setDetailKpi] = useState(null)
 
   const hasProjection = bridgeData?.has_projection
@@ -700,8 +561,23 @@ export default function ProjectionBridge({ bridgeData, projectionMonthly, onUplo
   return (
     <div className="space-y-0">
 
-      {/* Upload zone */}
-      <UploadZone onUploaded={onUploaded}/>
+      {/* Compact projection status bar */}
+      <div className="flex items-center justify-between card px-4 py-3 mb-5 border border-blue-100 bg-blue-50/40">
+        <div className="flex items-center gap-2">
+          <GitBranch size={13} className="text-blue-500"/>
+          {hasProjection
+            ? <span className="text-xs text-slate-700 font-medium">
+                Projection loaded · <span className="text-slate-500 font-normal">active</span>
+              </span>
+            : <span className="text-xs text-slate-500">No projection loaded</span>
+          }
+        </div>
+        <button
+          onClick={() => onNavigateToUpload?.()}
+          className="text-xs text-[#0055A4] hover:underline cursor-pointer font-medium">
+          {hasProjection ? 'Change ↗' : 'Upload in Data Upload →'}
+        </button>
+      </div>
 
       {/* No projection */}
       {!hasProjection && (
@@ -709,10 +585,16 @@ export default function ProjectionBridge({ bridgeData, projectionMonthly, onUplo
           <GitBranch size={36} className="text-slate-300 mx-auto mb-4"/>
           <h3 className="text-slate-600 font-semibold text-base mb-2">No Projection Loaded</h3>
           <p className="text-slate-400 text-sm max-w-md mx-auto">
-            Upload a 12-month projection CSV above (same format as actuals) to unlock
-            the bridge analysis — gap waterfall charts, root cause diagnostics, downstream
-            impact chains, and corrective action playbooks for every KPI.
+            Upload a 12-month projection CSV in the <strong className="text-slate-500">Data Upload</strong> tab
+            (same format as actuals) to unlock the bridge analysis — gap waterfall charts, root cause
+            diagnostics, downstream impact chains, and corrective action playbooks for every KPI.
           </p>
+          <button
+            onClick={() => onNavigateToUpload?.()}
+            className="mt-5 px-5 py-2 rounded-lg bg-[#0055A4] hover:bg-[#003d80] text-white
+                       text-sm font-medium transition-colors inline-flex items-center gap-1.5">
+            Go to Data Upload →
+          </button>
         </div>
       )}
 

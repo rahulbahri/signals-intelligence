@@ -318,6 +318,7 @@ export default function App() {
                   projectionMonthly={filteredProjectionMonthly}
                   onUploaded={loadAll}
                   onAskAnika={(kpiName) => setPrefillQuestion(`Why is ${kpiName} below projection?`)}
+                  onNavigateToUpload={() => setTab('upload')}
                 />
               )}
               {tab === 'upload'      && <CSVUpload onUploaded={loadAll}/>}
@@ -333,6 +334,7 @@ export default function App() {
               projectionMonthly={filteredProjectionMonthly}
               onUploaded={loadAll}
               onAskAnika={(kpiName) => setPrefillQuestion(`Why is ${kpiName} below projection?`)}
+              onNavigateToUpload={() => setTab('upload')}
             />
           )}
         </main>
