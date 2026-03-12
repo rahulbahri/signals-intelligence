@@ -693,6 +693,174 @@ def delete_upload(upload_id: int):
     conn.close()
     return {"deleted": upload_id}
 
+# ─── Demo Projection Seeder ─────────────────────────────────────────────────
+
+@app.get("/api/seed-demo-projection", tags=["System"])
+def seed_demo_projection():
+    """
+    Seed 1,000 projected transaction rows — a slightly-more-optimistic plan
+    vs the demo actuals.  Creates deliberate gaps so the bridge renders.
+
+    Projection story:
+      Revenue 6-10% above actuals every month
+      Gross margin 1-2pp higher (lower COGS%)
+      Churn 0.3-0.5pp lower  →  NRR higher
+      DSO 2-4 days shorter   →  better Cash Cycle
+      Result: most KPIs show yellow/red gaps in the bridge view.
+    """
+    import random
+    random.seed(99)
+
+    # Projected monthly params — more optimistic than actuals
+    # mo  revenue   cogs%  f_opex   v_opex%  dso  rec%  churn%  cust  new  sm%
+    MP_PROJ = [
+      ( 1,  808_000,  36.8,  245_000, 10.2,    38,  78.0,  2.70,  425,  15, 0.42),
+      ( 2,  828_000,  36.5,  243_000, 10.0,    36,  78.8,  2.50,  433,  17, 0.40),
+      ( 3,  852_000,  36.2,  241_000,  9.8,    36,  79.5,  2.30,  443,  19, 0.38),
+      ( 4,  886_000,  35.9,  239_000,  9.6,    33,  80.5,  2.00,  455,  22, 0.36),
+      ( 5,  928_000,  35.6,  237_000,  9.4,    32,  81.5,  1.80,  468,  26, 0.34),
+      ( 6,  978_000,  35.2,  235_000,  9.2,    30,  82.5,  1.70,  481,  28, 0.33),
+      ( 7, 1_042_000, 34.8,  233_000,  9.0,    28,  83.0,  1.50,  496,  32, 0.32),
+      ( 8, 1_112_000, 34.4,  231_000,  8.8,    27,  83.5,  1.30,  512,  36, 0.31),
+      ( 9, 1_188_000, 34.1,  229_000,  8.6,    27,  84.0,  1.20,  530,  40, 0.30),
+      (10, 1_178_000, 34.4,  231_000,  8.8,    32,  83.5,  1.40,  544,  28, 0.31),
+      (11, 1_228_000, 34.1,  229_000,  8.6,    31,  84.0,  1.30,  558,  32, 0.30),
+      (12, 1_315_000, 33.7,  225_000,  8.4,    38,  85.0,  1.00,  575,  42, 0.28),
+    ]
+
+    _RAW_SEGS = [
+        ("Enterprise", 0.18, 4.8,  0.55),
+        ("Mid-Market", 0.37, 1.3,  0.28),
+        ("SMB",        0.45, 0.52, 0.14),
+    ]
+    _wt_avg = sum(s * m for _, s, m, _ in _RAW_SEGS)
+    SEGS    = [(nm, s, m / _wt_avg, sd) for nm, s, m, sd in _RAW_SEGS]
+    rows_per_month = [85, 85, 84, 84, 83, 83, 83, 83, 83, 83, 83, 83]
+
+    tx_rows = []
+    for i, (mo, rev, cogs_pct, f_opex, v_opex_pct, dso, rec_pct, churn_pct, cust, new_c, sm_pct) in enumerate(MP_PROJ):
+        n           = rows_per_month[i]
+        total_opex  = f_opex + rev * v_opex_pct / 100
+        avg_rev_row = rev / n
+        for _ in range(n):
+            r = random.random(); cum = 0.0
+            for seg, share, mult, std in SEGS:
+                cum += share
+                if r <= cum: break
+            row_rev  = avg_rev_row * mult * max(0.35, 1 + random.gauss(0, std))
+            row_cogs = row_rev * (cogs_pct / 100) * random.gauss(1.0, 0.025)
+            row_opex = (total_opex / n) * random.gauss(1.0, 0.04)
+            row_ar   = row_rev * (dso / 30)  * random.gauss(1.0, 0.07)
+            is_rec   = 1 if random.random() < rec_pct   / 100 else 0
+            row_sm   = row_opex * sm_pct * random.gauss(1.0, 0.05)
+            row_churn= 1 if random.random() < churn_pct / 100 else 0
+            day      = random.randint(1, 28)
+            tx_rows.append({
+                "date":         f"2025-{mo:02d}-{day:02d}",
+                "revenue":      round(max(100,  row_rev),  2),
+                "cogs":         round(max(0,    row_cogs), 2),
+                "opex":         round(max(0,    row_opex), 2),
+                "ar":           round(max(0,    row_ar),   2),
+                "is_recurring": is_rec,
+                "churn":        row_churn,
+                "sm_allocated": round(max(0, row_sm), 2),
+                "customers":    1,
+            })
+
+    df       = pd.DataFrame(tx_rows)
+    col_map  = normalize_columns(df)
+    base_agg = aggregate_monthly(df, col_map)
+
+    base_by_mo: dict = {}
+    for _, row in base_agg.iterrows():
+        base_by_mo[int(row["month"])] = {
+            k: v for k, v in row.items()
+            if k not in ("year", "month") and v is not None
+               and not (isinstance(v, float) and np.isnan(v))
+        }
+
+    mo_rev:  dict = {}
+    mo_opex: dict = {}
+    for g, grp in df.groupby(df["date"].str[5:7].astype(int)):
+        mo_rev[g]  = grp["revenue"].sum()
+        mo_opex[g] = grp["opex"].sum()
+
+    final_kpis: dict = {}
+    for mo, rev, cogs_pct, f_opex, v_opex_pct, dso, rec_pct, churn_pct, cust, new_c, sm_pct in MP_PROJ:
+        kpis = dict(base_by_mo.get(mo, {}))
+        kpis["dso"]             = round(dso * random.gauss(1.0, 0.02), 1)
+        kpis["cash_conv_cycle"] = round(kpis["dso"] + 8.0 + random.gauss(0, 0.5), 1)
+        kpis["revenue_quality"]  = round(rec_pct + random.gauss(0, 0.3), 2)
+        kpis["recurring_revenue"]= kpis["revenue_quality"]
+        nrr_base = 115.43 - 5.29 * churn_pct
+        kpis["churn_rate"] = round(churn_pct + random.gauss(0, 0.05), 2)
+        kpis["nrr"]        = round(nrr_base  + random.gauss(0, 0.25), 1)
+        kpis["customer_concentration"] = round(26.0 - (cust - 418) / 420 * 8.0 + random.gauss(0, 0.4), 1)
+        final_kpis[mo] = kpis
+
+    mos_sorted = sorted(final_kpis.keys())
+    for idx, mo in enumerate(mos_sorted):
+        kpis   = final_kpis[mo]
+        params = MP_PROJ[mo - 1]
+        act_rev   = params[1]
+        act_opex  = params[3] + params[1] * params[4] / 100
+        sm_spend  = act_opex * params[10]
+        cust      = params[8]
+        new_c     = params[9]
+        churn_pct = params[7]
+        gross_m   = kpis.get("gross_margin", 62.0) / 100
+        arpu_mo   = act_rev / max(cust, 1)
+        cac       = sm_spend / max(new_c, 1)
+        kpis["cac_payback"] = round(cac / max(arpu_mo * gross_m, 1), 1)
+
+        if idx == 0:
+            kpis["sales_efficiency"] = round((new_c * arpu_mo * 12) / max(sm_spend * 12, 1), 2)
+            kpis["burn_multiple"]    = round(min(5.0, sm_spend / max(new_c * arpu_mo, 1)), 2)
+        else:
+            prev_mo       = mos_sorted[idx - 1]
+            prev_rev      = MP_PROJ[prev_mo - 1][1]
+            prev_cogs_pct = MP_PROJ[prev_mo - 1][2]
+            prev_opex     = MP_PROJ[prev_mo - 1][3] + MP_PROJ[prev_mo - 1][1] * MP_PROJ[prev_mo - 1][4] / 100
+            prev_op       = prev_rev * (1 - prev_cogs_pct / 100) - prev_opex
+            curr_op       = act_rev  * (1 - params[2]     / 100) - act_opex
+            delta_rev         = act_rev - prev_rev
+            rev_growth_pct    = delta_rev / prev_rev * 100 if prev_rev else 0
+            kpis["revenue_growth"] = round(rev_growth_pct, 2)
+            kpis["arr_growth"]     = round(rev_growth_pct * 0.88 + random.gauss(0, 0.18), 2)
+            if abs(rev_growth_pct) > 0.3 and prev_op > 0:
+                op_inc_pct = (curr_op - prev_op) / prev_op * 100
+                kpis["operating_leverage"] = round(max(-5.0, min(8.0, op_inc_pct / rev_growth_pct)), 2)
+            if delta_rev > 0:
+                kpis["sales_efficiency"] = round((delta_rev * 12) / max(sm_spend, 1), 2)
+                kpis["burn_multiple"]    = round(min(5.0, sm_spend / max(delta_rev * 12, 1)), 2)
+            else:
+                kpis["sales_efficiency"] = round(max(0.05, sm_spend * 0.05 / max(sm_spend, 1)), 2)
+                kpis["burn_multiple"]    = 5.0
+        final_kpis[mo] = kpis
+
+    conn = get_db()
+    conn.execute("DELETE FROM projection_monthly_data")
+    conn.execute("DELETE FROM projection_uploads")
+    cur = conn.execute(
+        "INSERT INTO projection_uploads (filename, uploaded_at, row_count, detected_columns) VALUES (?,?,?,?)",
+        ("demo_projection_1000.csv", datetime.utcnow().isoformat(), len(df),
+         json.dumps({c: c for c in df.columns}))
+    )
+    upload_id = cur.lastrowid
+    for mo, kpis in final_kpis.items():
+        clean = {k: (None if isinstance(v, float) and np.isnan(v) else v) for k, v in kpis.items()}
+        conn.execute(
+            "INSERT INTO projection_monthly_data (projection_upload_id, year, month, data_json) VALUES (?,?,?,?)",
+            (upload_id, 2025, mo, json.dumps(clean))
+        )
+    conn.commit()
+    conn.close()
+    return {
+        "seeded": True, "months": 12, "transactions": len(df), "upload_id": upload_id,
+        "message": "Demo projection seeded — 12 months optimistic plan vs actuals.",
+    }
+
+
 # ─── Projection Endpoints ────────────────────────────────────────────────────
 
 @app.post("/api/projection/upload", tags=["Projection"])
