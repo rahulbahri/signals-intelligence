@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import axios from 'axios'
 import {
   LayoutDashboard, Fingerprint, TrendingUp,
@@ -14,6 +14,7 @@ import SummaryBar from './components/SummaryBar.jsx'
 import KpiDetailPanel from './components/KpiDetailPanel.jsx'
 import AiQueryPanel from './components/AiQueryPanel.jsx'
 import ProjectionBridge from './components/ProjectionBridge.jsx'
+import MonthRangeFilter from './components/MonthRangeFilter.jsx'
 
 const TABS = [
   { id: 'dashboard',   label: 'Command Center',    Icon: LayoutDashboard },
@@ -33,17 +34,95 @@ const PAGE_TITLES = {
   api:         'API Reference',
 }
 
+const FILTER_TABS = new Set(['dashboard', 'fingerprint', 'trends', 'projection'])
+
+// Recompute a KPI's status from its filtered average
+function kpiStatus(avg, target, direction) {
+  if (avg == null || !target) return 'grey'
+  const r = direction === 'higher' ? avg / target : target / avg
+  return r >= 0.98 ? 'green' : r >= 0.90 ? 'yellow' : 'red'
+}
+
 export default function App() {
-  const [tab, setTab]                         = useState('dashboard')
-  const [summary, setSummary]                 = useState(null)
-  const [kpiDefs, setKpiDefs]                 = useState([])
-  const [monthly, setMonthly]                 = useState([])
-  const [fingerprint, setFingerprint]         = useState([])
-  const [loading, setLoading]                 = useState(true)
-  const [selectedKpi, setSelectedKpi]         = useState(null)
+  const [tab, setTab]                             = useState('dashboard')
+  const [summary, setSummary]                     = useState(null)
+  const [kpiDefs, setKpiDefs]                     = useState([])
+  const [monthly, setMonthly]                     = useState([])
+  const [fingerprint, setFingerprint]             = useState([])
+  const [loading, setLoading]                     = useState(true)
+  const [selectedKpi, setSelectedKpi]             = useState(null)
   const [projectionMonthly, setProjectionMonthly] = useState([])
-  const [bridgeData, setBridgeData]           = useState(null)
-  const [prefillQuestion, setPrefillQuestion] = useState(null)
+  const [bridgeData, setBridgeData]               = useState(null)
+  const [prefillQuestion, setPrefillQuestion]     = useState(null)
+  const [monthRange, setMonthRange]               = useState({ from: 1, to: 12 })
+
+  // ── Derived / filtered data ──────────────────────────────────────────────
+
+  const filteredFingerprint = useMemo(() => {
+    if (!fingerprint?.length) return fingerprint
+    return fingerprint.map(kpi => {
+      const months = (kpi.monthly ?? []).filter(m => {
+        const mo = parseInt(m.period.split('-')[1], 10)
+        return mo >= monthRange.from && mo <= monthRange.to
+      })
+      const vals = months.map(m => m.value).filter(v => v != null)
+      const avg  = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null
+      const trend = vals.length >= 2
+        ? (vals.at(-1) > vals[0] ? 'up' : vals.at(-1) < vals[0] ? 'down' : 'flat')
+        : (kpi.trend ?? 'flat')
+      return { ...kpi, monthly: months, avg, fy_status: kpiStatus(avg, kpi.target, kpi.direction), trend }
+    })
+  }, [fingerprint, monthRange])
+
+  const filteredMonthly = useMemo(() =>
+    monthly.filter(m => m.month >= monthRange.from && m.month <= monthRange.to),
+  [monthly, monthRange])
+
+  const filteredProjectionMonthly = useMemo(() =>
+    projectionMonthly.filter(m => m.month >= monthRange.from && m.month <= monthRange.to),
+  [projectionMonthly, monthRange])
+
+  const filteredBridgeData = useMemo(() => {
+    if (!bridgeData?.has_projection || !bridgeData?.has_overlap) return bridgeData
+    let on_track = 0, behind = 0, ahead = 0
+    const kpis = {}
+    Object.entries(bridgeData.kpis).forEach(([key, kpi]) => {
+      const months = Object.fromEntries(
+        Object.entries(kpi.months).filter(([p]) => {
+          const mo = parseInt(p.split('-')[1], 10)
+          return mo >= monthRange.from && mo <= monthRange.to
+        })
+      )
+      const mv = Object.values(months)
+      if (!mv.length) { kpis[key] = kpi; return }
+      const avgActual    = mv.reduce((s, m) => s + m.actual,    0) / mv.length
+      const avgProjected = mv.reduce((s, m) => s + m.projected, 0) / mv.length
+      const avgGap       = avgActual - avgProjected
+      const avgGapPct    = avgProjected
+        ? (kpi.direction === 'higher'
+            ? (avgActual - avgProjected) / Math.abs(avgProjected) * 100
+            : (avgProjected - avgActual) / Math.abs(avgProjected) * 100)
+        : 0
+      const status = avgGapPct >= -3 ? 'green' : avgGapPct >= -8 ? 'yellow' : 'red'
+      if (status === 'green') on_track++
+      else if (avgGapPct > 3) ahead++
+      else behind++
+      kpis[key] = { ...kpi, months, avg_actual: avgActual, avg_projected: avgProjected,
+                    avg_gap: avgGap, avg_gap_pct: avgGapPct, overall_status: status }
+    })
+    const totalMo = new Set(Object.values(kpis).flatMap(k => Object.keys(k.months))).size
+    return { ...bridgeData, kpis, summary: { on_track, behind, ahead, total_months_compared: totalMo } }
+  }, [bridgeData, monthRange])
+
+  // Summary with status counts recomputed from the filtered fingerprint
+  const filteredSummary = useMemo(() => {
+    if (!summary) return summary
+    const sb = { green: 0, yellow: 0, red: 0, grey: 0 }
+    filteredFingerprint?.forEach(k => sb[k.fy_status || 'grey']++)
+    return { ...summary, status_breakdown: sb }
+  }, [summary, filteredFingerprint])
+
+  // ── Data loading ─────────────────────────────────────────────────────────
 
   async function loadAll() {
     setLoading(true)
@@ -69,7 +148,7 @@ export default function App() {
   }
 
   function openKpi(kpiKey) {
-    const kpi = fingerprint.find(k => k.key === kpiKey)
+    const kpi = filteredFingerprint.find(k => k.key === kpiKey)
     const def = kpiDefs.find(k => k.key === kpiKey)
     setSelectedKpi(kpi ? { ...kpi, formula: def?.formula ?? null } : null)
   }
@@ -78,8 +157,8 @@ export default function App() {
 
   useEffect(() => { loadAll() }, [])
 
-  const noData   = !loading && summary?.months_of_data === 0
-  const sb        = summary?.status_breakdown || {}
+  const noData    = !loading && summary?.months_of_data === 0
+  const sb        = filteredSummary?.status_breakdown || {}
   const critical  = sb.red    || 0
   const attention = sb.yellow || 0
   const onTarget  = sb.green  || 0
@@ -106,8 +185,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* Status mini-summary */}
-        {!loading && summary && (
+        {/* Status mini-summary — reflects current month filter */}
+        {!loading && filteredSummary && (
           <div className="px-4 py-3 border-b border-white/10">
             <p className="text-slate-400 text-[10px] uppercase tracking-wider mb-2 font-medium">
               FY 2025 Status
@@ -129,7 +208,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Navigation + AI Panel — share the flex-1 space so AI can expand */}
+        {/* Navigation + AI Panel */}
         <div className="flex-1 flex flex-col min-h-0">
           <nav className="flex-1 min-h-0 py-4 space-y-0.5 overflow-y-auto">
             <p className="text-slate-500 text-[10px] uppercase tracking-wider font-medium px-6 mb-2">
@@ -150,7 +229,7 @@ export default function App() {
 
           {/* AI Query Panel */}
           <AiQueryPanel
-            bridgeData={bridgeData}
+            bridgeData={filteredBridgeData}
             prefillQuestion={prefillQuestion}
             onPrefillConsumed={() => setPrefillQuestion(null)}
           />
@@ -198,6 +277,11 @@ export default function App() {
           </div>
         </header>
 
+        {/* Month range filter strip — shown on data tabs only */}
+        {!loading && !noData && FILTER_TABS.has(tab) && (
+          <MonthRangeFilter value={monthRange} onChange={setMonthRange}/>
+        )}
+
         {/* Scrollable content */}
         <main className="flex-1 overflow-y-auto px-6 py-5">
 
@@ -225,13 +309,13 @@ export default function App() {
 
           {!loading && !noData && (
             <>
-              {tab === 'dashboard'   && <><SummaryBar summary={summary} onRefresh={loadAll} onSeed={seedDemo}/><Scorecard fingerprint={fingerprint} kpiDefs={kpiDefs} onKpiClick={openKpi}/></>}
-              {tab === 'fingerprint' && <Fingerprint2 fingerprint={fingerprint} onKpiClick={openKpi}/>}
-              {tab === 'trends'      && <MonthlyTrend fingerprint={fingerprint} monthly={monthly} onKpiClick={openKpi}/>}
+              {tab === 'dashboard'   && <><SummaryBar summary={filteredSummary} onRefresh={loadAll} onSeed={seedDemo}/><Scorecard fingerprint={filteredFingerprint} kpiDefs={kpiDefs} onKpiClick={openKpi}/></>}
+              {tab === 'fingerprint' && <Fingerprint2 fingerprint={filteredFingerprint} onKpiClick={openKpi}/>}
+              {tab === 'trends'      && <MonthlyTrend fingerprint={filteredFingerprint} monthly={filteredMonthly} onKpiClick={openKpi}/>}
               {tab === 'projection'  && (
                 <ProjectionBridge
-                  bridgeData={bridgeData}
-                  projectionMonthly={projectionMonthly}
+                  bridgeData={filteredBridgeData}
+                  projectionMonthly={filteredProjectionMonthly}
                   onUploaded={loadAll}
                   onAskAnika={(kpiName) => setPrefillQuestion(`Why is ${kpiName} below projection?`)}
                 />
@@ -245,8 +329,8 @@ export default function App() {
           {!loading && noData && tab === 'api'        && <APIReference kpiDefs={kpiDefs}/>}
           {!loading && noData && tab === 'projection' && (
             <ProjectionBridge
-              bridgeData={bridgeData}
-              projectionMonthly={projectionMonthly}
+              bridgeData={filteredBridgeData}
+              projectionMonthly={filteredProjectionMonthly}
               onUploaded={loadAll}
               onAskAnika={(kpiName) => setPrefillQuestion(`Why is ${kpiName} below projection?`)}
             />
