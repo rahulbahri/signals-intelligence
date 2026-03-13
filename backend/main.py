@@ -1524,6 +1524,367 @@ Rules:
         return {"answer": f"Query unavailable: {str(e)}", "kpis_referenced": []}
 
 
+# ─── Data Ontology ──────────────────────────────────────────────────────────
+#
+# Builds a knowledge graph from the 18 KPIs:
+#   Nodes  → each KPI
+#   Edges  → CAUSES / INFLUENCES (from CAUSATION_RULES) +
+#             CORRELATES_WITH / ANTI_CORRELATES (from monthly time-series)
+#   Scores → degree centrality + iterative PageRank
+#   Recs   → novel signal hypotheses from untested links & multi-hop paths
+
+import threading, math
+
+ONTOLOGY_DOMAIN = {
+    "revenue_growth":        "growth",
+    "arr_growth":            "growth",
+    "nrr":                   "retention",
+    "churn_rate":            "retention",
+    "gross_margin":          "profitability",
+    "operating_margin":      "profitability",
+    "ebitda_margin":         "profitability",
+    "contribution_margin":   "profitability",
+    "operating_leverage":    "profitability",
+    "opex_ratio":            "efficiency",
+    "burn_multiple":         "efficiency",
+    "cac_payback":           "efficiency",
+    "sales_efficiency":      "efficiency",
+    "cash_conv_cycle":       "cashflow",
+    "dso":                   "cashflow",
+    "revenue_quality":       "revenue",
+    "recurring_revenue":     "revenue",
+    "customer_concentration":"risk",
+}
+
+def _init_ontology_tables(conn):
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS ontology_nodes (
+            key TEXT PRIMARY KEY,
+            name TEXT,
+            domain TEXT,
+            unit TEXT,
+            direction TEXT,
+            centrality REAL DEFAULT 0,
+            pagerank REAL DEFAULT 0,
+            updated_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS ontology_edges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source TEXT,
+            target TEXT,
+            relation TEXT,
+            strength REAL,
+            evidence TEXT,
+            UNIQUE(source, target, relation)
+        );
+        CREATE TABLE IF NOT EXISTS ontology_recommendations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT,
+            description TEXT,
+            rec_type TEXT,
+            path TEXT,
+            confidence REAL,
+            novelty REAL,
+            impact REAL,
+            hypothesis TEXT,
+            status TEXT DEFAULT 'active',
+            created_at TEXT
+        );
+    """)
+    conn.commit()
+
+
+def _run_ontology_discovery():
+    conn = get_db()
+    _init_ontology_tables(conn)
+
+    now = datetime.utcnow().isoformat()
+
+    # ── 1. Upsert nodes from KPI_DEFS ─────────────────────────────────────
+    for kdef in KPI_DEFS:
+        key = kdef["key"]
+        conn.execute("""
+            INSERT INTO ontology_nodes(key, name, domain, unit, direction, updated_at)
+            VALUES (?,?,?,?,?,?)
+            ON CONFLICT(key) DO UPDATE SET
+              name=excluded.name, domain=excluded.domain,
+              unit=excluded.unit, direction=excluded.direction,
+              updated_at=excluded.updated_at
+        """, (key, kdef["name"], ONTOLOGY_DOMAIN.get(key,"other"),
+              kdef["unit"], kdef["direction"], now))
+    conn.commit()
+
+    # ── 2. Edges from CAUSATION_RULES ─────────────────────────────────────
+    edge_count = 0
+    for source_key, rules in CAUSATION_RULES.items():
+        for target_key in rules.get("downstream_impact", []):
+            conn.execute("""
+                INSERT OR IGNORE INTO ontology_edges(source, target, relation, strength, evidence)
+                VALUES (?,?,'CAUSES',0.75,'domain_knowledge')
+            """, (source_key, target_key))
+            edge_count += 1
+    conn.commit()
+
+    # ── 3. Correlation edges from monthly_data ─────────────────────────────
+    rows = conn.execute("SELECT data_json FROM monthly_data ORDER BY year, month").fetchall()
+    series: dict = {}
+    for row in rows:
+        d = json.loads(row["data_json"])
+        for k, v in d.items():
+            if v is not None:
+                series.setdefault(k, []).append(float(v))
+
+    kpi_keys = [kd["key"] for kd in KPI_DEFS]
+    for i, ka in enumerate(kpi_keys):
+        for kb in kpi_keys[i+1:]:
+            va = series.get(ka, [])
+            vb = series.get(kb, [])
+            n = min(len(va), len(vb))
+            if n < 3:
+                continue
+            va, vb = va[:n], vb[:n]
+            # Pearson r
+            mean_a = sum(va)/n
+            mean_b = sum(vb)/n
+            num = sum((a-mean_a)*(b-mean_b) for a,b in zip(va,vb))
+            den = math.sqrt(sum((a-mean_a)**2 for a in va)*sum((b-mean_b)**2 for b in vb))
+            if den == 0:
+                continue
+            r = num/den
+            if abs(r) < 0.45:
+                continue
+            rel = "CORRELATES_WITH" if r > 0 else "ANTI_CORRELATES"
+            strength = round(abs(r), 4)
+            conn.execute("""
+                INSERT INTO ontology_edges(source, target, relation, strength, evidence)
+                VALUES (?,?,?,?,'monthly_correlation')
+                ON CONFLICT(source, target, relation) DO UPDATE SET
+                  strength=MAX(strength, excluded.strength)
+            """, (ka, kb, rel, strength))
+            edge_count += 1
+    conn.commit()
+
+    # ── 4. Compute degree centrality + PageRank ────────────────────────────
+    edges_all = conn.execute("SELECT source, target, strength FROM ontology_edges").fetchall()
+    node_keys = [r["key"] for r in conn.execute("SELECT key FROM ontology_nodes").fetchall()]
+
+    degree: dict = {k: 0 for k in node_keys}
+    for e in edges_all:
+        degree[e["source"]] = degree.get(e["source"], 0) + 1
+        degree[e["target"]] = degree.get(e["target"], 0) + 1
+    max_deg = max(degree.values()) if degree else 1
+
+    # Build adjacency for PageRank
+    out_links: dict = {k: [] for k in node_keys}
+    for e in edges_all:
+        out_links.setdefault(e["source"], []).append(e["target"])
+
+    pr = {k: 1.0 for k in node_keys}
+    d = 0.85
+    for _ in range(15):
+        new_pr: dict = {}
+        for k in node_keys:
+            incoming = [s for s, targets in out_links.items() if k in targets]
+            rank = (1 - d)
+            for s in incoming:
+                rank += d * pr[s] / max(len(out_links[s]), 1)
+            new_pr[k] = rank
+        pr = new_pr
+    max_pr = max(pr.values()) if pr else 1
+
+    for k in node_keys:
+        cent = round(degree.get(k, 0) / max_deg, 4)
+        pg   = round(pr.get(k, 0) / max_pr, 4)
+        conn.execute("UPDATE ontology_nodes SET centrality=?, pagerank=? WHERE key=?", (cent, pg, k))
+    conn.commit()
+
+    # ── 5. Generate signal recommendations ────────────────────────────────
+    conn.execute("DELETE FROM ontology_recommendations WHERE 1")
+
+    # Build quick lookup
+    node_map = {r["key"]: dict(r) for r in conn.execute("SELECT * FROM ontology_nodes").fetchall()}
+    edges_set = {(e["source"], e["target"], e["relation"]) for e in edges_all}
+    causes_map: dict = {}   # source → [targets] for CAUSES edges
+    for e in edges_all:
+        if e["relation"] == "CAUSES":
+            causes_map.setdefault(e["source"], []).append(e["target"])
+
+    rec_count = 0
+
+    # (a) Untested link: A -CAUSES-> B -CAUSES-> C but no direct A→C edge
+    for a, b_list in causes_map.items():
+        for b in b_list:
+            for c in causes_map.get(b, []):
+                if a == c:
+                    continue
+                if (a, c, "CAUSES") not in edges_set and (a, c, "CORRELATES_WITH") not in edges_set:
+                    na = node_map.get(a, {}); nc = node_map.get(c, {})
+                    conn.execute("""
+                        INSERT INTO ontology_recommendations
+                          (title, description, rec_type, path, confidence, novelty, impact, hypothesis, status, created_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?)
+                    """, (
+                        f"Untested link: {na.get('name',a)} → {nc.get('name',c)}",
+                        f"{na.get('name',a)} causes {node_map.get(b,{}).get('name',b)} which causes "
+                        f"{nc.get('name',c)}, but the direct relationship is unmeasured.",
+                        "untested_link",
+                        json.dumps([a, b, c]),
+                        0.70, 0.85, pr.get(c, 0) / max_pr,
+                        f"Measure whether changes in {na.get('name',a)} predict {nc.get('name',c)} "
+                        f"with a lag, bypassing {node_map.get(b,{}).get('name',b)}.",
+                        "active", now
+                    ))
+                    rec_count += 1
+                    if rec_count >= 40:
+                        break
+            if rec_count >= 40:
+                break
+        if rec_count >= 40:
+            break
+
+    # (b) Cross-domain bridge: high-centrality node linking 2+ domains
+    domain_nodes: dict = {}
+    for k, n in node_map.items():
+        domain_nodes.setdefault(n.get("domain", "other"), []).append(k)
+
+    bridges = [k for k in node_keys if degree.get(k, 0) >= 4]
+    bridges.sort(key=lambda k: -pr.get(k, 0))
+    for bridge in bridges[:5]:
+        neighbors = set()
+        for e in edges_all:
+            if e["source"] == bridge:
+                neighbors.add(e["target"])
+            if e["target"] == bridge:
+                neighbors.add(e["source"])
+        neighbor_domains = {node_map.get(n, {}).get("domain") for n in neighbors} - {None}
+        if len(neighbor_domains) >= 2:
+            nb = node_map.get(bridge, {})
+            conn.execute("""
+                INSERT INTO ontology_recommendations
+                  (title, description, rec_type, path, confidence, novelty, impact, hypothesis, status, created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
+            """, (
+                f"Bridge metric: {nb.get('name', bridge)}",
+                f"{nb.get('name', bridge)} connects {len(neighbor_domains)} domains "
+                f"({', '.join(sorted(neighbor_domains))}). Monitoring it provides early warning across multiple KPI clusters.",
+                "bridge_node",
+                json.dumps([bridge]),
+                0.80, 0.75, pr.get(bridge, 0) / max_pr,
+                f"Set alerts on {nb.get('name', bridge)} — it influences KPIs across "
+                f"{', '.join(sorted(neighbor_domains))} domains simultaneously.",
+                "active", now
+            ))
+            rec_count += 1
+
+    # (c) Strongly-correlated cluster recommendations
+    corr_edges = [(e["source"], e["target"], e["strength"]) for e in edges_all
+                  if e["relation"] == "CORRELATES_WITH" and e["strength"] > 0.75]
+    if len(corr_edges) >= 2:
+        top_corr = sorted(corr_edges, key=lambda x: -x[2])[:3]
+        for src, tgt, str_ in top_corr:
+            ns = node_map.get(src, {}); nt = node_map.get(tgt, {})
+            conn.execute("""
+                INSERT INTO ontology_recommendations
+                  (title, description, rec_type, path, confidence, novelty, impact, hypothesis, status, created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
+            """, (
+                f"Strong co-movement: {ns.get('name',src)} ↔ {nt.get('name',tgt)}",
+                f"Pearson r = {str_:.2f}. These KPIs move together strongly — "
+                f"a combined leading indicator may have more predictive power than either alone.",
+                "cluster",
+                json.dumps([src, tgt]),
+                round(str_, 2), 0.65, round((pr.get(src,0)+pr.get(tgt,0))/(2*max_pr), 4),
+                f"Build a composite signal from {ns.get('name',src)} and {nt.get('name',tgt)} "
+                f"to create a single early-warning index.",
+                "active", now
+            ))
+            rec_count += 1
+
+    conn.commit()
+    conn.close()
+    return {"nodes": len(node_keys), "edges": edge_count, "recommendations": rec_count}
+
+
+# ── Ontology endpoints ────────────────────────────────────────────────────
+
+@app.post("/api/ontology/discover")
+def ontology_discover():
+    """Trigger background knowledge-graph discovery."""
+    def _bg():
+        try:
+            _run_ontology_discovery()
+        except Exception as exc:
+            print(f"Ontology discovery error: {exc}")
+    threading.Thread(target=_bg, daemon=True).start()
+    return {"status": "running", "message": "Ontology discovery started — refresh in ~5 seconds"}
+
+
+@app.get("/api/ontology/graph")
+def ontology_graph(domain: Optional[str] = None):
+    conn = get_db()
+    _init_ontology_tables(conn)
+    q = "SELECT * FROM ontology_nodes"
+    params = ()
+    if domain and domain != "all":
+        q += " WHERE domain=?"
+        params = (domain,)
+    nodes = [dict(r) for r in conn.execute(q, params).fetchall()]
+    node_keys = {n["key"] for n in nodes}
+    edges = [dict(e) for e in conn.execute("SELECT * FROM ontology_edges").fetchall()
+             if e["source"] in node_keys and e["target"] in node_keys]
+    conn.close()
+    return {"nodes": nodes, "edges": edges}
+
+
+@app.get("/api/ontology/stats")
+def ontology_stats():
+    conn = get_db()
+    _init_ontology_tables(conn)
+    total_nodes = conn.execute("SELECT COUNT(*) FROM ontology_nodes").fetchone()[0]
+    total_edges = conn.execute("SELECT COUNT(*) FROM ontology_edges").fetchone()[0]
+    active_recs  = conn.execute("SELECT COUNT(*) FROM ontology_recommendations WHERE status='active'").fetchone()[0]
+    domain_rows  = conn.execute("SELECT domain, COUNT(*) as cnt FROM ontology_nodes GROUP BY domain").fetchall()
+    edge_rows    = conn.execute("SELECT relation, COUNT(*) as cnt FROM ontology_edges GROUP BY relation").fetchall()
+    top_nodes    = conn.execute(
+        "SELECT key, name, pagerank, domain FROM ontology_nodes ORDER BY pagerank DESC LIMIT 5"
+    ).fetchall()
+    conn.close()
+    return {
+        "total_nodes": total_nodes,
+        "total_edges": total_edges,
+        "active_recommendations": active_recs,
+        "domain_distribution": {r["domain"]: r["cnt"] for r in domain_rows},
+        "edge_type_distribution": {r["relation"]: r["cnt"] for r in edge_rows},
+        "top_nodes_by_pagerank": [dict(r) for r in top_nodes],
+    }
+
+
+@app.get("/api/ontology/recommendations")
+def ontology_recommendations(rec_type: Optional[str] = None, status: Optional[str] = "active"):
+    conn = get_db()
+    _init_ontology_tables(conn)
+    q = "SELECT * FROM ontology_recommendations WHERE status=?"
+    params: list = [status or "active"]
+    if rec_type:
+        q += " AND rec_type=?"
+        params.append(rec_type)
+    q += " ORDER BY impact DESC, confidence DESC"
+    rows = [dict(r) for r in conn.execute(q, params).fetchall()]
+    for r in rows:
+        r["path"] = json.loads(r["path"]) if r.get("path") else []
+    conn.close()
+    return rows
+
+
+@app.post("/api/ontology/recommendations/{rec_id}/dismiss")
+def dismiss_recommendation(rec_id: int):
+    conn = get_db()
+    conn.execute("UPDATE ontology_recommendations SET status='dismissed' WHERE id=?", (rec_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "dismissed"}
+
+
 # ─── Serve React Frontend ───────────────────────────────────────────────────
 
 STATIC_DIR = Path(__file__).parent.parent / "frontend" / "dist"

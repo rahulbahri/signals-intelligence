@@ -3,7 +3,7 @@ import axios from 'axios'
 import {
   LayoutDashboard, Fingerprint, TrendingUp,
   Upload, Code2, RefreshCw, ChevronRight,
-  Activity, GitBranch
+  Activity, GitBranch, Network
 } from 'lucide-react'
 import Scorecard from './components/Scorecard.jsx'
 import Fingerprint2 from './components/Fingerprint.jsx'
@@ -15,12 +15,14 @@ import KpiDetailPanel from './components/KpiDetailPanel.jsx'
 import AiQueryPanel from './components/AiQueryPanel.jsx'
 import ProjectionBridge from './components/ProjectionBridge.jsx'
 import MonthRangeFilter from './components/MonthRangeFilter.jsx'
+import OntologyPage from './components/OntologyPage.jsx'
 
 const TABS = [
   { id: 'dashboard',   label: 'Command Center',    Icon: LayoutDashboard },
   { id: 'fingerprint', label: 'Org Fingerprint',   Icon: Fingerprint     },
   { id: 'trends',      label: 'Monthly Trends',    Icon: TrendingUp      },
   { id: 'projection',  label: 'Bridge Analysis',   Icon: GitBranch       },
+  { id: 'ontology',    label: 'Data Ontology',     Icon: Network         },
   { id: 'upload',      label: 'Data Upload',        Icon: Upload          },
   { id: 'api',         label: 'API Reference',      Icon: Code2           },
 ]
@@ -30,6 +32,7 @@ const PAGE_TITLES = {
   fingerprint: 'Organisational Fingerprint',
   trends:      'Monthly KPI Trends',
   projection:  'Projection vs Actual — Bridge Analysis',
+  ontology:    'Data Ontology — KPI Knowledge Graph',
   upload:      'Data Upload',
   api:         'API Reference',
 }
@@ -321,11 +324,13 @@ export default function App() {
                   onNavigateToUpload={() => setTab('upload')}
                 />
               )}
+              {tab === 'ontology'    && <OntologyPage />}
               {tab === 'upload'      && <CSVUpload onUploaded={loadAll}/>}
               {tab === 'api'         && <APIReference kpiDefs={kpiDefs}/>}
             </>
           )}
 
+          {!loading && noData && tab === 'ontology'   && <OntologyPage />}
           {!loading && noData && tab === 'upload'     && <CSVUpload onUploaded={loadAll}/>}
           {!loading && noData && tab === 'api'        && <APIReference kpiDefs={kpiDefs}/>}
           {!loading && noData && tab === 'projection' && (
