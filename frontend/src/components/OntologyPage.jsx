@@ -122,7 +122,7 @@ function useForceLayout(nodes, edges, width, height) {
 
 // ── Force graph SVG ───────────────────────────────────────────────────────
 function ForceGraph({ nodes, edges, selected, onSelect }) {
-  const W = 900, H = 580
+  const W = 900, H = 440
   const pos = useForceLayout(nodes, edges, W, H)
 
   const neighborSet = useMemo(() => {
@@ -138,7 +138,7 @@ function ForceGraph({ nodes, edges, selected, onSelect }) {
   if (!nodes.length) return null
 
   return (
-    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ background: '#0f172a', borderRadius: 8 }}>
+    <svg width="100%" height="440" viewBox={`0 0 ${W} ${H}`} style={{ background: '#0f172a', borderRadius: 8, display: 'block' }}>
       <defs>
         {Object.entries(RELATION_COLOR).map(([rel, col]) => (
           <marker key={rel} id={`arr-${rel}`} markerWidth="6" markerHeight="6"
@@ -403,8 +403,10 @@ export default function OntologyPage() {
         <div style={{ display: 'flex', gap: 4 }}>
           {[['graph', 'Knowledge Graph'], ['recs', `Signal Recommendations${recs.length ? ` (${recs.length})` : ''}`]].map(([id, label]) => (
             <button key={id} onClick={() => setTab(id)}
-              className={tab === id ? 'sidebar-link active' : 'sidebar-link'}
-              style={{ padding: '6px 14px', borderRadius: 6, fontSize: 13, display: 'inline-flex' }}>
+              style={{ padding: '6px 14px', borderRadius: 6, fontSize: 13, display: 'inline-flex',
+                border: 'none', cursor: 'pointer', fontWeight: 600,
+                background: tab === id ? '#0055A4' : '#334155',
+                color: tab === id ? '#fff' : '#cbd5e1' }}>
               {label}
             </button>
           ))}
@@ -428,8 +430,8 @@ export default function OntologyPage() {
               <button key={d} onClick={() => setDomain(d)}
                 style={{ padding: '4px 12px', borderRadius: 999, fontSize: 12, border: 'none',
                   cursor: 'pointer', fontWeight: 500,
-                  background: domain === d ? (DOMAIN_COLOR[d] || '#0055A4') : '#e2e8f0',
-                  color: domain === d ? '#fff' : '#475569' }}>
+                  background: domain === d ? (DOMAIN_COLOR[d] || '#0055A4') : '#334155',
+                  color: domain === d ? '#fff' : '#94a3b8' }}>
                 {d === 'all' ? 'All domains' : d.charAt(0).toUpperCase() + d.slice(1)}
               </button>
             ))}

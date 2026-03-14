@@ -1665,7 +1665,7 @@ def _run_ontology_discovery():
     conn.commit()
 
     # ── 4. Compute degree centrality + PageRank ────────────────────────────
-    edges_all = conn.execute("SELECT source, target, strength FROM ontology_edges").fetchall()
+    edges_all = conn.execute("SELECT source, target, strength, relation FROM ontology_edges").fetchall()
     node_keys = [r["key"] for r in conn.execute("SELECT key FROM ontology_nodes").fetchall()]
 
     degree: dict = {k: 0 for k in node_keys}
