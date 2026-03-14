@@ -121,7 +121,7 @@ function useForceLayout(nodes, edges, width, height) {
 
 // ── Force graph SVG ───────────────────────────────────────────────────────
 function ForceGraph({ nodes, edges, selected, onSelect }) {
-  const W = 900, H = 560
+  const W = 900, H = 750
   const pos = useForceLayout(nodes, edges, W, H)
 
   const neighborSet = useMemo(() => {
@@ -137,7 +137,7 @@ function ForceGraph({ nodes, edges, selected, onSelect }) {
   if (!nodes.length) return null
 
   return (
-    <svg width="100%" height="560" viewBox={`0 0 ${W} ${H}`}
+    <svg width="100%" height="750" viewBox={`0 0 ${W} ${H}`}
       style={{ background: '#0f172a', borderRadius: 8, display: 'block' }}>
       <defs>
         {Object.entries(RELATION_COLOR).map(([rel, col]) => (
