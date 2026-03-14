@@ -929,7 +929,7 @@ def seed_demo_projection():
     ]
     _wt_avg = sum(s * m for _, s, m, _ in _RAW_SEGS)
     SEGS    = [(nm, s, m / _wt_avg, sd) for nm, s, m, sd in _RAW_SEGS]
-    rows_per_month = [85, 85, 84, 84, 83, 83, 83, 83, 83, 83, 83, 83]
+    rows_per_month = [417, 417, 417, 417, 417, 417, 417, 417, 416, 416, 416, 416]  # = 5000
 
     tx_rows = []
     for i, (mo, rev, cogs_pct, f_opex, v_opex_pct, dso, rec_pct, churn_pct, cust, new_c, sm_pct) in enumerate(MP_PROJ):
@@ -1325,7 +1325,7 @@ def seed_demo():
     _wt_avg = sum(s * m for _, s, m, _ in _RAW_SEGS)   # = 1.579  → must → 1.0
     SEGS = [(nm, s, m / _wt_avg, sd) for nm, s, m, sd in _RAW_SEGS]
 
-    rows_per_month = [85, 85, 84, 84, 83, 83, 83, 83, 83, 83, 83, 83]  # = 1000
+    rows_per_month = [417, 417, 417, 417, 417, 417, 417, 417, 416, 416, 416, 416]  # = 5000
 
     tx_rows = []
     for i, (mo, rev, cogs_pct, f_opex, v_opex_pct, dso, rec_pct, churn_pct, cust, new_c, sm_pct) in enumerate(MP):
@@ -1372,7 +1372,7 @@ def seed_demo():
     col_map_stored = {c: c for c in df.columns}
     cur = conn.execute(
         "INSERT INTO uploads (filename, uploaded_at, row_count, detected_columns) VALUES (?,?,?,?)",
-        ("demo_correlated_1000.csv", datetime.utcnow().isoformat(), len(df),
+        ("demo_correlated_5000.csv", datetime.utcnow().isoformat(), len(df),
          json.dumps(col_map_stored))
     )
     upload_id = cur.lastrowid
