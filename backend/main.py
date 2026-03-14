@@ -108,6 +108,46 @@ init_db()
 
 # ─── KPI Definitions ────────────────────────────────────────────────────────
 
+# Extended ontology-only metrics (not in KPI_DEFS main dashboard; used only in the knowledge graph)
+EXTENDED_ONTOLOGY_METRICS = [
+    # Growth
+    {"key": "cpl",                "name": "Cost Per Lead",              "domain": "growth",        "unit": "usd",    "direction": "lower"},
+    {"key": "mql_sql_rate",       "name": "MQL-to-SQL Rate",            "domain": "growth",        "unit": "pct",    "direction": "higher"},
+    {"key": "pipeline_velocity",  "name": "Pipeline Velocity",          "domain": "growth",        "unit": "ratio",  "direction": "higher"},
+    {"key": "win_rate",           "name": "Win Rate",                   "domain": "growth",        "unit": "pct",    "direction": "higher"},
+    {"key": "organic_traffic",    "name": "Organic Traffic Growth",     "domain": "growth",        "unit": "pct",    "direction": "higher"},
+    {"key": "brand_awareness",    "name": "Brand Awareness Index",      "domain": "growth",        "unit": "score",  "direction": "higher"},
+    {"key": "quota_attainment",   "name": "Quota Attainment Rate",      "domain": "growth",        "unit": "pct",    "direction": "higher"},
+    {"key": "marketing_roi",      "name": "Marketing ROI",              "domain": "growth",        "unit": "ratio",  "direction": "higher"},
+    # Revenue
+    {"key": "avg_deal_size",      "name": "Avg Deal Size",              "domain": "revenue",       "unit": "usd",    "direction": "higher"},
+    {"key": "expansion_rate",     "name": "Expansion Revenue Rate",     "domain": "revenue",       "unit": "pct",    "direction": "higher"},
+    {"key": "gross_dollar_ret",   "name": "Gross Dollar Retention",     "domain": "revenue",       "unit": "pct",    "direction": "higher"},
+    {"key": "ltv_cac",            "name": "LTV:CAC Ratio",              "domain": "revenue",       "unit": "ratio",  "direction": "higher"},
+    # Retention
+    {"key": "product_nps",        "name": "Product NPS",                "domain": "retention",     "unit": "score",  "direction": "higher"},
+    {"key": "feature_adoption",   "name": "Feature Adoption Rate",      "domain": "retention",     "unit": "pct",    "direction": "higher"},
+    {"key": "activation_rate",    "name": "Activation Rate",            "domain": "retention",     "unit": "pct",    "direction": "higher"},
+    {"key": "time_to_value",      "name": "Time-to-Value",              "domain": "retention",     "unit": "days",   "direction": "lower"},
+    {"key": "health_score",       "name": "Customer Health Score",      "domain": "retention",     "unit": "score",  "direction": "higher"},
+    {"key": "logo_retention",     "name": "Logo Retention Rate",        "domain": "retention",     "unit": "pct",    "direction": "higher"},
+    {"key": "csat",               "name": "Customer Satisfaction",      "domain": "retention",     "unit": "score",  "direction": "higher"},
+    # Efficiency
+    {"key": "headcount_eff",      "name": "Headcount Efficiency",       "domain": "efficiency",    "unit": "ratio",  "direction": "higher"},
+    {"key": "rev_per_employee",   "name": "Revenue Per Employee",       "domain": "efficiency",    "unit": "usd",    "direction": "higher"},
+    {"key": "ramp_time",          "name": "Sales Rep Ramp Time",        "domain": "efficiency",    "unit": "months", "direction": "lower"},
+    {"key": "support_volume",     "name": "Support Ticket Volume",      "domain": "efficiency",    "unit": "count",  "direction": "lower"},
+    {"key": "automation_rate",    "name": "Process Automation Rate",    "domain": "efficiency",    "unit": "pct",    "direction": "higher"},
+    # Cashflow
+    {"key": "cash_runway",        "name": "Cash Runway",                "domain": "cashflow",      "unit": "months", "direction": "higher"},
+    {"key": "current_ratio",      "name": "Current Ratio",              "domain": "cashflow",      "unit": "ratio",  "direction": "higher"},
+    {"key": "working_capital",    "name": "Working Capital Ratio",      "domain": "cashflow",      "unit": "ratio",  "direction": "higher"},
+    # Risk
+    {"key": "contraction_rate",   "name": "Contraction Rate",           "domain": "risk",          "unit": "pct",    "direction": "lower"},
+    # Profitability
+    {"key": "payback_period",     "name": "Investor Payback Period",    "domain": "profitability", "unit": "months", "direction": "lower"},
+]
+
 KPI_DEFS = [
     {"key": "revenue_growth",       "name": "Revenue Growth Rate",       "unit": "pct",    "direction": "higher", "formula": "(Revenue_Month - Revenue_PrevMonth) / Revenue_PrevMonth × 100"},
     {"key": "gross_margin",         "name": "Gross Margin %",            "unit": "pct",    "direction": "higher", "formula": "(Revenue - COGS) / Revenue × 100"},
@@ -352,6 +392,157 @@ CAUSATION_RULES = {
         ],
     },
 }
+
+EXTENDED_CAUSATION_RULES = {
+    "cpl": {
+        "root_causes": ["Ad spend efficiency declining", "Audience targeting too broad", "Landing page conversion below benchmark"],
+        "downstream_impact": ["mql_sql_rate", "burn_multiple", "sales_efficiency", "marketing_roi"],
+        "corrective_actions": ["Tighten audience targeting by ICP", "A/B test landing page variants", "Review channel mix for CPL efficiency"],
+    },
+    "mql_sql_rate": {
+        "root_causes": ["Lead quality from marketing declining", "Sales qualification criteria too strict", "ICP misalignment between marketing and sales"],
+        "downstream_impact": ["pipeline_velocity", "win_rate", "revenue_growth"],
+        "corrective_actions": ["Align MQL definition with sales team", "Review lead scoring model", "Audit top-of-funnel content quality"],
+    },
+    "pipeline_velocity": {
+        "root_causes": ["Deal cycle lengthening", "Poor stage conversion rates", "Insufficient pipeline coverage"],
+        "downstream_impact": ["revenue_growth", "arr_growth", "sales_efficiency"],
+        "corrective_actions": ["Implement deal acceleration playbooks", "Review CRM stage definitions", "Focus on high-velocity deal segments"],
+    },
+    "win_rate": {
+        "root_causes": ["Competitive losses increasing", "Value proposition not resonating", "Pricing uncompetitive in target segments"],
+        "downstream_impact": ["revenue_growth", "sales_efficiency", "burn_multiple"],
+        "corrective_actions": ["Conduct win/loss analysis quarterly", "Refine sales talk tracks for objections", "Review competitive positioning"],
+    },
+    "avg_deal_size": {
+        "root_causes": ["Excessive discounting", "SMB vs enterprise mix shift", "Feature adoption not driving upsell"],
+        "downstream_impact": ["revenue_growth", "arr_growth", "ltv_cac"],
+        "corrective_actions": ["Tighten discount approval process", "Focus enterprise motion", "Build upsell playbook"],
+    },
+    "product_nps": {
+        "root_causes": ["Core feature gaps vs competitors", "UX friction in key workflows", "Support responsiveness declining"],
+        "downstream_impact": ["churn_rate", "feature_adoption", "expansion_rate", "health_score"],
+        "corrective_actions": ["Analyze detractor feedback themes", "Prioritize top friction points in roadmap", "Improve onboarding experience"],
+    },
+    "feature_adoption": {
+        "root_causes": ["Onboarding not highlighting key features", "UX discoverability issues", "Training resources insufficient"],
+        "downstream_impact": ["health_score", "expansion_rate", "churn_rate"],
+        "corrective_actions": ["Revamp onboarding flow", "Add in-app feature discovery tooltips", "Launch feature-specific training content"],
+    },
+    "activation_rate": {
+        "root_causes": ["Time-to-value too long", "Setup complexity", "Integration friction at launch"],
+        "downstream_impact": ["time_to_value", "health_score", "churn_rate"],
+        "corrective_actions": ["Reduce setup steps", "Improve first-run experience", "Offer white-glove onboarding for enterprise"],
+    },
+    "time_to_value": {
+        "root_causes": ["Implementation complexity", "Insufficient implementation support", "Data migration friction"],
+        "downstream_impact": ["activation_rate", "health_score", "churn_rate", "product_nps"],
+        "corrective_actions": ["Create quick-start implementation path", "Pre-build common integration templates", "Hire implementation specialists"],
+    },
+    "health_score": {
+        "root_causes": ["Usage declining in key features", "Support tickets increasing", "Stakeholder changes at customer"],
+        "downstream_impact": ["churn_rate", "logo_retention", "expansion_rate"],
+        "corrective_actions": ["Trigger proactive CS outreach below threshold", "Conduct QBRs for at-risk accounts", "Assign executive sponsor for strategic accounts"],
+    },
+    "support_volume": {
+        "root_causes": ["Product usability issues", "Feature gaps driving workaround requests", "Documentation insufficient"],
+        "downstream_impact": ["csat", "health_score", "headcount_eff"],
+        "corrective_actions": ["Audit top ticket categories and address root causes", "Expand self-service knowledge base", "Improve in-app contextual help"],
+    },
+    "csat": {
+        "root_causes": ["Response time degrading", "Issue resolution quality declining", "Product issues increasing"],
+        "downstream_impact": ["churn_rate", "product_nps", "expansion_rate"],
+        "corrective_actions": ["Set SLA targets and monitor compliance", "Implement CSAT follow-up workflow", "Invest in support tooling"],
+    },
+    "logo_retention": {
+        "root_causes": ["Health scores declining", "Competitive displacement", "Budget cuts at customer accounts"],
+        "downstream_impact": ["nrr", "gross_dollar_ret", "revenue_growth"],
+        "corrective_actions": ["Implement 90-day renewal risk review", "Build champion network at each account", "Develop ROI documentation process"],
+    },
+    "expansion_rate": {
+        "root_causes": ["Upsell motions not activated", "Product adoption plateau", "CS-to-Sales handoff breakdown"],
+        "downstream_impact": ["nrr", "arr_growth", "ltv_cac"],
+        "corrective_actions": ["Define expansion trigger criteria", "Build CS-sales collaboration playbook", "Create land-and-expand product packaging"],
+    },
+    "cash_runway": {
+        "root_causes": ["Burn rate above plan", "Revenue below projection", "Collections delays extending"],
+        "downstream_impact": ["working_capital", "operating_margin"],
+        "corrective_actions": ["Implement 13-week cash flow forecast", "Prioritize high-margin revenue initiatives", "Accelerate receivables collection"],
+    },
+    "headcount_eff": {
+        "root_causes": ["Revenue growth not keeping pace with hiring", "Productivity per head declining", "Role duplication across teams"],
+        "downstream_impact": ["rev_per_employee", "opex_ratio", "burn_multiple"],
+        "corrective_actions": ["Pause non-critical hires", "Review org structure for efficiency", "Implement productivity benchmarks by role"],
+    },
+    "rev_per_employee": {
+        "root_causes": ["Headcount growing faster than revenue", "Revenue below plan", "Low-productivity new hires"],
+        "downstream_impact": ["operating_leverage", "burn_multiple"],
+        "corrective_actions": ["Align hiring plan to revenue milestones", "Improve new hire time-to-productivity", "Automate repetitive workflows"],
+    },
+    "ltv_cac": {
+        "root_causes": ["CAC increasing", "LTV declining due to churn", "Gross margin compression reducing LTV"],
+        "downstream_impact": ["burn_multiple", "payback_period"],
+        "corrective_actions": ["Optimize acquisition channel mix", "Reduce churn to extend LTV", "Improve ARPU through upsell"],
+    },
+    "marketing_roi": {
+        "root_causes": ["Channel performance declining", "Attribution model misalignment", "Budget allocation inefficient"],
+        "downstream_impact": ["cpl", "revenue_growth", "organic_traffic"],
+        "corrective_actions": ["Implement multi-touch attribution", "Reallocate budget to best-performing channels", "Set marketing efficiency benchmarks"],
+    },
+    "quota_attainment": {
+        "root_causes": ["Pipeline coverage insufficient", "Deal slippage to future quarters", "Rep productivity below target"],
+        "downstream_impact": ["revenue_growth", "sales_efficiency", "win_rate"],
+        "corrective_actions": ["Review quota setting methodology", "Implement pipeline health scoring", "Increase coaching frequency for underperformers"],
+    },
+    "gross_dollar_ret": {
+        "root_causes": ["Churn and contraction above plan", "Downgrade mix increasing", "Pricing structure misaligned with value"],
+        "downstream_impact": ["nrr", "arr_growth"],
+        "corrective_actions": ["Segment churn by customer tier", "Review downgrade thresholds", "Implement retention pricing strategy"],
+    },
+    "current_ratio": {
+        "root_causes": ["Short-term liabilities growing faster than assets", "Cash declining", "Receivables delayed"],
+        "downstream_impact": ["cash_runway", "working_capital"],
+        "corrective_actions": ["Improve cash conversion cycle", "Review short-term debt obligations", "Accelerate AR collection"],
+    },
+    "working_capital": {
+        "root_causes": ["Operating cash flow declining", "High short-term liabilities", "Payables acceleration"],
+        "downstream_impact": ["cash_runway"],
+        "corrective_actions": ["Optimize inventory levels", "Extend AP payment terms", "Improve DSO"],
+    },
+    "organic_traffic": {
+        "root_causes": ["SEO rankings declining", "Content production insufficient", "Algorithm changes"],
+        "downstream_impact": ["brand_awareness", "cpl", "marketing_roi"],
+        "corrective_actions": ["Invest in SEO-optimized content", "Build backlink strategy", "Audit technical SEO issues"],
+    },
+    "brand_awareness": {
+        "root_causes": ["Marketing reach below target", "PR and earned media declining", "Competitive share of voice increasing"],
+        "downstream_impact": ["organic_traffic", "win_rate", "cpl"],
+        "corrective_actions": ["Invest in thought leadership content", "Partner with industry analysts", "Increase conference presence"],
+    },
+    "contraction_rate": {
+        "root_causes": ["Customer downgrades increasing", "Feature cuts in pricing tiers", "Budget pressure at accounts"],
+        "downstream_impact": ["nrr", "gross_dollar_ret", "arr_growth"],
+        "corrective_actions": ["Identify contraction triggers early via health score", "Develop contraction prevention playbook", "Review pricing tier structure"],
+    },
+    "ramp_time": {
+        "root_causes": ["Onboarding program gaps", "Complex product requiring long learning curve", "Insufficient sales training resources"],
+        "downstream_impact": ["quota_attainment", "sales_efficiency", "headcount_eff"],
+        "corrective_actions": ["Redesign sales onboarding program", "Create structured ramp milestones", "Implement sales coaching framework"],
+    },
+    "automation_rate": {
+        "root_causes": ["Manual processes not prioritized for automation", "Tool integration gaps", "Engineering capacity constrained"],
+        "downstream_impact": ["headcount_eff", "opex_ratio", "support_volume"],
+        "corrective_actions": ["Audit top manual processes by time cost", "Prioritize automation ROI in roadmap", "Evaluate RPA tooling for back-office"],
+    },
+    "payback_period": {
+        "root_causes": ["CAC increasing", "Gross margin declining", "ARPU below plan"],
+        "downstream_impact": ["burn_multiple", "cash_runway"],
+        "corrective_actions": ["Optimize acquisition channel mix", "Review pricing to increase ARPU", "Improve gross margin through COGS reduction"],
+    },
+}
+
+# Merged causation rules for the graph endpoint
+ALL_CAUSATION_RULES = {**CAUSATION_RULES, **EXTENDED_CAUSATION_RULES}
 
 def compute_gap_status(gap_pct: float) -> str:
     """
@@ -1556,6 +1747,42 @@ ONTOLOGY_DOMAIN = {
     "customer_concentration":"risk",
 }
 
+# Base signal weights for synthetic time-series generation.
+# 8 signals (A-H) with different frequencies; each metric is a weighted combo + noise.
+# Shared signal weights create realistic correlations between related metrics.
+_SYN_WEIGHTS = {
+    # key: [A, B, C, D, E, F, G, H, trend_per_month, base_value]
+    "cpl":              [ 1.0,  0.5, -0.3,  0.0,  0.2,  0.0,  0.0,  0.0, -0.05,  80.0],
+    "mql_sql_rate":     [-0.6, -0.3,  0.5,  0.3,  0.0,  0.2,  0.0,  0.0,  0.02,  22.0],
+    "pipeline_velocity":[-0.5, -0.4,  0.6,  0.4,  0.0,  0.1,  0.0,  0.0,  0.03,  1.2],
+    "win_rate":         [-0.4, -0.2,  0.5,  0.4,  0.0,  0.2,  0.0,  0.0,  0.01,  28.0],
+    "organic_traffic":  [ 0.2,  0.0,  0.3,  0.0,  0.7,  0.3,  0.0,  0.0,  0.10,  12.0],
+    "brand_awareness":  [ 0.1,  0.0,  0.2,  0.0,  0.6,  0.4,  0.0,  0.0,  0.08,  55.0],
+    "quota_attainment": [-0.5, -0.4,  0.5,  0.3,  0.0,  0.0,  0.0,  0.0,  0.00,  82.0],
+    "marketing_roi":    [-0.7,  0.0,  0.4,  0.2,  0.5,  0.0,  0.0,  0.0,  0.02,  3.2],
+    "avg_deal_size":    [-0.3,  0.0,  0.3,  0.5,  0.0,  0.0,  0.4,  0.0,  0.05, 48000.0],
+    "expansion_rate":   [-0.5, -0.6,  0.3,  0.0,  0.0,  0.0,  0.5,  0.0,  0.02,  18.0],
+    "gross_dollar_ret": [-0.6, -0.5,  0.4,  0.0,  0.0,  0.0,  0.4,  0.0,  0.01,  91.0],
+    "ltv_cac":          [-0.4, -0.3,  0.4,  0.3,  0.0,  0.0,  0.3,  0.0,  0.02,  4.5],
+    "product_nps":      [ 0.0, -0.4, -0.3,  0.6,  0.0,  0.0,  0.3,  0.2,  0.03,  42.0],
+    "feature_adoption": [ 0.0, -0.3, -0.2,  0.5,  0.0,  0.0,  0.4,  0.2,  0.04,  38.0],
+    "activation_rate":  [ 0.0, -0.3, -0.2,  0.5,  0.0,  0.0,  0.3,  0.3,  0.03,  64.0],
+    "time_to_value":    [ 0.0,  0.4,  0.2, -0.5,  0.0,  0.0, -0.3, -0.2, -0.04,  21.0],
+    "health_score":     [ 0.0, -0.5, -0.3,  0.5,  0.0,  0.0,  0.4,  0.2,  0.02,  72.0],
+    "logo_retention":   [-0.3, -0.5, -0.2,  0.4,  0.0,  0.0,  0.4,  0.1,  0.01,  94.0],
+    "csat":             [ 0.0, -0.4, -0.2,  0.5,  0.0,  0.0,  0.3,  0.3,  0.02,  4.1],
+    "headcount_eff":    [-0.3, -0.2,  0.3,  0.0,  0.0,  0.5,  0.2,  0.0,  0.01,  0.85],
+    "rev_per_employee": [-0.4, -0.2,  0.4,  0.0,  0.0,  0.5,  0.2,  0.0,  0.02, 185000.0],
+    "ramp_time":        [ 0.3,  0.2, -0.3,  0.0,  0.0, -0.4, -0.2,  0.0, -0.02,  5.5],
+    "support_volume":   [ 0.2,  0.5,  0.2, -0.4,  0.0,  0.0, -0.2, -0.3, -0.01, 320.0],
+    "automation_rate":  [-0.2, -0.1,  0.2,  0.0,  0.0,  0.6,  0.0,  0.0,  0.05,  34.0],
+    "cash_runway":      [-0.3, -0.4,  0.2,  0.0,  0.0,  0.3,  0.0,  0.5,  0.00,  18.0],
+    "current_ratio":    [-0.2, -0.3,  0.2,  0.0,  0.0,  0.2,  0.0,  0.5,  0.00,  2.1],
+    "working_capital":  [-0.2, -0.3,  0.2,  0.0,  0.0,  0.2,  0.0,  0.5, -0.01,  1.8],
+    "contraction_rate": [ 0.4,  0.5,  0.2, -0.4,  0.0,  0.0, -0.3, -0.1,  0.01,  3.5],
+    "payback_period":   [ 0.5,  0.4, -0.3,  0.0,  0.0, -0.2, -0.2,  0.0, -0.02, 22.0],
+}
+
 def _init_ontology_tables(conn):
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS ontology_nodes (
@@ -1612,11 +1839,22 @@ def _run_ontology_discovery():
               updated_at=excluded.updated_at
         """, (key, kdef["name"], ONTOLOGY_DOMAIN.get(key,"other"),
               kdef["unit"], kdef["direction"], now))
+
+    # Upsert extended ontology-only nodes
+    for em in EXTENDED_ONTOLOGY_METRICS:
+        conn.execute("""
+            INSERT INTO ontology_nodes(key, name, domain, unit, direction, updated_at)
+            VALUES (?,?,?,?,?,?)
+            ON CONFLICT(key) DO UPDATE SET
+              name=excluded.name, domain=excluded.domain,
+              unit=excluded.unit, direction=excluded.direction,
+              updated_at=excluded.updated_at
+        """, (em["key"], em["name"], em["domain"], em["unit"], em["direction"], now))
     conn.commit()
 
-    # ── 2. Edges from CAUSATION_RULES ─────────────────────────────────────
+    # ── 2. Edges from CAUSATION_RULES + EXTENDED_CAUSATION_RULES ──────────
     edge_count = 0
-    for source_key, rules in CAUSATION_RULES.items():
+    for source_key, rules in ALL_CAUSATION_RULES.items():
         for target_key in rules.get("downstream_impact", []):
             conn.execute("""
                 INSERT OR IGNORE INTO ontology_edges(source, target, relation, strength, evidence)
@@ -1625,7 +1863,8 @@ def _run_ontology_discovery():
             edge_count += 1
     conn.commit()
 
-    # ── 3. Correlation edges from monthly_data ─────────────────────────────
+    # ── 3. Synthetic + real time-series for correlation ────────────────────
+    # Load real KPI monthly data
     rows = conn.execute("SELECT data_json FROM monthly_data ORDER BY year, month").fetchall()
     series: dict = {}
     for row in rows:
@@ -1634,9 +1873,35 @@ def _run_ontology_discovery():
             if v is not None:
                 series.setdefault(k, []).append(float(v))
 
-    kpi_keys = [kd["key"] for kd in KPI_DEFS]
-    for i, ka in enumerate(kpi_keys):
-        for kb in kpi_keys[i+1:]:
+    # Generate 60-month synthetic series for extended metrics using base signals.
+    # 8 sinusoidal base signals (A-H) with different periods/phases.
+    N = 60
+    import random as _rnd
+    _rnd.seed(42)
+    base_signals = [
+        [math.sin(2 * math.pi * t / p + ph) for t in range(N)]
+        for p, ph in [(12, 0), (6, 1.0), (24, 2.1), (18, 0.5),
+                      (36, 1.2), (9, 3.1), (15, 0.8), (48, 1.7)]
+    ]
+    for em in EXTENDED_ONTOLOGY_METRICS:
+        key = em["key"]
+        if key not in _SYN_WEIGHTS:
+            continue
+        w = _SYN_WEIGHTS[key]
+        weights, trend, base = w[:8], w[8], w[9]
+        ts = []
+        for t in range(N):
+            val = base + trend * t
+            for j, sig in enumerate(base_signals):
+                val += weights[j] * sig[t] * base * 0.08
+            val += _rnd.gauss(0, abs(base) * 0.02)
+            ts.append(val)
+        series[key] = ts
+
+    # Correlation loop across ALL nodes (KPI_DEFS + extended)
+    all_keys = [kd["key"] for kd in KPI_DEFS] + [em["key"] for em in EXTENDED_ONTOLOGY_METRICS]
+    for i, ka in enumerate(all_keys):
+        for kb in all_keys[i+1:]:
             va = series.get(ka, [])
             vb = series.get(kb, [])
             n = min(len(va), len(vb))
@@ -1828,7 +2093,14 @@ def ontology_graph(domain: Optional[str] = None):
     if domain and domain != "all":
         q += " WHERE domain=?"
         params = (domain,)
-    nodes = [dict(r) for r in conn.execute(q, params).fetchall()]
+    nodes = []
+    for r in conn.execute(q, params).fetchall():
+        n = dict(r)
+        rules = ALL_CAUSATION_RULES.get(n["key"], {})
+        n["root_causes"]       = rules.get("root_causes", [])
+        n["corrective_actions"]= rules.get("corrective_actions", [])
+        n["downstream_impact"] = rules.get("downstream_impact", [])
+        nodes.append(n)
     node_keys = {n["key"] for n in nodes}
     edges = [dict(e) for e in conn.execute("SELECT * FROM ontology_edges").fetchall()
              if e["source"] in node_keys and e["target"] in node_keys]
