@@ -204,7 +204,7 @@ function NodeInspector({ nodeKey, nodes, edges, onClose }) {
       padding: 16, width: 260, flexShrink: 0 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
         <span style={{ fontWeight: 600, color: col, fontSize: 13 }}>{node.name}</span>
-        <button onClick={onClose} style={{ color: '#64748b', background: 'none', border: 'none', cursor: 'pointer' }}>
+        <button onClick={onClose} style={{ color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer' }}>
           <X size={14}/>
         </button>
       </div>
@@ -216,22 +216,22 @@ function NodeInspector({ nodeKey, nodes, edges, onClose }) {
           ['Degree',      outgoing.length + incoming.length],
         ].map(([label, val]) => (
           <div key={label} style={{ background: '#0f172a', borderRadius: 6, padding: '6px 8px' }}>
-            <div style={{ color: '#64748b', fontSize: 10 }}>{label}</div>
-            <div style={{ color: '#e2e8f0', fontWeight: 600, fontSize: 13 }}>{val}</div>
+            <div style={{ color: '#94a3b8', fontSize: 10 }}>{label}</div>
+            <div style={{ color: '#f1f5f9', fontWeight: 600, fontSize: 13 }}>{val}</div>
           </div>
         ))}
       </div>
       {outgoing.length > 0 && (
         <div style={{ marginBottom: 10 }}>
-          <div style={{ color: '#64748b', fontSize: 10, marginBottom: 4 }}>OUTGOING ({outgoing.length})</div>
+          <div style={{ color: '#94a3b8', fontSize: 10, marginBottom: 4 }}>OUTGOING ({outgoing.length})</div>
           {outgoing.slice(0, 5).map((e, i) => {
             const tn = nodes.find(n => n.key === e.target)
             return (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between',
                 padding: '3px 0', borderBottom: '1px solid #1e293b' }}>
-                <span style={{ color: '#cbd5e1', fontSize: 11 }}>{tn?.name || e.target}</span>
+                <span style={{ color: '#e2e8f0', fontSize: 11 }}>{tn?.name || e.target}</span>
                 <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999,
-                  background: (RELATION_COLOR[e.relation] || '#94a3b8') + '22',
+                  background: (RELATION_COLOR[e.relation] || '#94a3b8') + '33',
                   color: RELATION_COLOR[e.relation] || '#94a3b8' }}>
                   {fmtRelation(e.relation)}
                 </span>
@@ -242,15 +242,15 @@ function NodeInspector({ nodeKey, nodes, edges, onClose }) {
       )}
       {incoming.length > 0 && (
         <div>
-          <div style={{ color: '#64748b', fontSize: 10, marginBottom: 4 }}>INCOMING ({incoming.length})</div>
+          <div style={{ color: '#94a3b8', fontSize: 10, marginBottom: 4 }}>INCOMING ({incoming.length})</div>
           {incoming.slice(0, 5).map((e, i) => {
             const sn = nodes.find(n => n.key === e.source)
             return (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between',
                 padding: '3px 0', borderBottom: '1px solid #1e293b' }}>
-                <span style={{ color: '#cbd5e1', fontSize: 11 }}>{sn?.name || e.source}</span>
+                <span style={{ color: '#e2e8f0', fontSize: 11 }}>{sn?.name || e.source}</span>
                 <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999,
-                  background: (RELATION_COLOR[e.relation] || '#94a3b8') + '22',
+                  background: (RELATION_COLOR[e.relation] || '#94a3b8') + '33',
                   color: RELATION_COLOR[e.relation] || '#94a3b8' }}>
                   {fmtRelation(e.relation)}
                 </span>
@@ -297,13 +297,13 @@ function RecCard({ rec, nodes, onDismiss }) {
 
   return (
     <div style={{ background: '#1e293b', borderRadius: 10,
-      border: '1px solid #2d3f55', padding: '16px 18px', position: 'relative',
+      border: '1px solid #3b5070', padding: '16px 18px', position: 'relative',
       display: 'flex', flexDirection: 'column', gap: 12 }}>
 
       {/* Dismiss */}
       <button onClick={() => onDismiss(rec.id)}
         style={{ position: 'absolute', top: 12, right: 12, background: 'none',
-          border: 'none', color: '#475569', cursor: 'pointer', padding: 2,
+          border: 'none', color: '#64748b', cursor: 'pointer', padding: 2,
           display: 'flex', alignItems: 'center' }}>
         <X size={14}/>
       </button>
@@ -326,12 +326,12 @@ function RecCard({ rec, nodes, onDismiss }) {
           {pathNames.map((item, i) => (
             <span key={item.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
               <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 4,
-                background: '#0f172a', color: '#94a3b8', border: '1px solid #334155',
+                background: '#0f172a', color: '#cbd5e1', border: '1px solid #475569',
                 whiteSpace: 'nowrap' }}>
                 {item.name.toLowerCase()}
               </span>
               {i < pathNames.length - 1 && (
-                <span style={{ color: '#475569', fontSize: 13, lineHeight: 1 }}>→</span>
+                <span style={{ color: '#94a3b8', fontSize: 13, lineHeight: 1 }}>→</span>
               )}
             </span>
           ))}
@@ -340,19 +340,19 @@ function RecCard({ rec, nodes, onDismiss }) {
 
       {/* Confidence / Novelty / Impact */}
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, color: '#94a3b8' }}>
+        <span style={{ fontSize: 12, color: '#cbd5e1' }}>
           Confidence{' '}
           <span style={{ color: '#00AEEF', fontWeight: 700 }}>
             {Math.round((rec.confidence || 0) * 100)}%
           </span>
         </span>
-        <span style={{ fontSize: 12, color: '#94a3b8' }}>
+        <span style={{ fontSize: 12, color: '#cbd5e1' }}>
           Novelty{' '}
           <span style={{ color: '#f59e0b', fontWeight: 700 }}>
             {Math.round((rec.novelty || 0) * 100)}%
           </span>
         </span>
-        <span style={{ fontSize: 12, color: '#94a3b8' }}>
+        <span style={{ fontSize: 12, color: '#cbd5e1' }}>
           Impact{' '}
           <span style={{ color: '#10b981', fontWeight: 700 }}>
             {Math.round((rec.impact || 0) * 100)}%
@@ -363,7 +363,7 @@ function RecCard({ rec, nodes, onDismiss }) {
       {/* Expandable toggle */}
       <button onClick={() => setExpanded(e => !e)}
         style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
-          background: 'none', border: 'none', color: '#64748b',
+          background: 'none', border: 'none', color: '#94a3b8',
           cursor: 'pointer', fontSize: 12, padding: 0, alignSelf: 'flex-start' }}>
         <ChevronRight size={13} style={{
           transform: expanded ? 'rotate(90deg)' : 'none',
@@ -378,7 +378,7 @@ function RecCard({ rec, nodes, onDismiss }) {
 
           {rec.hypothesis && (
             <div>
-              <div style={{ color: '#475569', fontSize: 10, fontWeight: 700,
+              <div style={{ color: '#64748b', fontSize: 10, fontWeight: 700,
                 letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
                 Hypothesis
               </div>
@@ -396,7 +396,7 @@ function RecCard({ rec, nodes, onDismiss }) {
 
           {actions.length > 0 && (
             <div>
-              <div style={{ color: '#475569', fontSize: 10, fontWeight: 700,
+              <div style={{ color: '#64748b', fontSize: 10, fontWeight: 700,
                 letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
                 Steps
               </div>
@@ -407,7 +407,7 @@ function RecCard({ rec, nodes, onDismiss }) {
                       background: '#0055A4', color: '#fff', fontSize: 10, fontWeight: 700,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       flexShrink: 0 }}>{i + 1}</div>
-                    <span style={{ color: '#94a3b8', fontSize: 12, lineHeight: 1.4 }}>{a}</span>
+                    <span style={{ color: '#cbd5e1', fontSize: 12, lineHeight: 1.4 }}>{a}</span>
                   </div>
                 ))}
               </div>
@@ -416,7 +416,7 @@ function RecCard({ rec, nodes, onDismiss }) {
 
           {impacts.length > 0 && (
             <div>
-              <div style={{ color: '#475569', fontSize: 10, fontWeight: 700,
+              <div style={{ color: '#64748b', fontSize: 10, fontWeight: 700,
                 letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
                 Downstream Impact
               </div>
@@ -499,9 +499,9 @@ export default function OntologyPage() {
               sub: Object.entries(stats.domain_distribution || {}).map(([d,c]) => `${fmtDomain(d)}:${c}`).join(' · ') },
           ].map(({ label, value, sub }) => (
             <div key={label} className="card" style={{ padding: 16 }}>
-              <div style={{ color: '#64748b', fontSize: 11, marginBottom: 4 }}>{label}</div>
+              <div style={{ color: '#475569', fontSize: 11, fontWeight: 600, marginBottom: 4 }}>{label}</div>
               <div style={{ color: '#0055A4', fontSize: 28, fontWeight: 700 }}>{value}</div>
-              <div style={{ color: '#94a3b8', fontSize: 10 }}>{sub}</div>
+              <div style={{ color: '#64748b', fontSize: 11 }}>{sub}</div>
             </div>
           ))}
         </div>
@@ -512,10 +512,11 @@ export default function OntologyPage() {
         <div style={{ display: 'flex', gap: 4 }}>
           {[['graph', 'Knowledge Graph'], ['recs', `Signal Recommendations${recs.length ? ` (${recs.length})` : ''}`]].map(([id, label]) => (
             <button key={id} onClick={() => setTab(id)}
-              style={{ padding: '6px 14px', borderRadius: 6, fontSize: 13, display: 'inline-flex',
+              style={{ padding: '6px 16px', borderRadius: 6, fontSize: 13, display: 'inline-flex',
                 border: 'none', cursor: 'pointer', fontWeight: 600,
-                background: tab === id ? '#0055A4' : '#334155',
-                color: tab === id ? '#fff' : '#cbd5e1' }}>
+                background: tab === id ? '#0055A4' : '#2d3f55',
+                color: tab === id ? '#fff' : '#e2e8f0',
+                boxShadow: tab === id ? '0 0 0 1px #0066cc' : 'none' }}>
               {label}
             </button>
           ))}
@@ -539,7 +540,7 @@ export default function OntologyPage() {
                 style={{ padding: '4px 12px', borderRadius: 999, fontSize: 12, border: 'none',
                   cursor: 'pointer', fontWeight: 500,
                   background: domain === d ? (DOMAIN_COLOR[d] || '#0055A4') : '#334155',
-                  color: domain === d ? '#fff' : '#94a3b8' }}>
+                  color: domain === d ? '#fff' : '#e2e8f0' }}>
                 {d === 'all' ? 'All Domains' : fmtDomain(d)}
               </button>
             ))}
@@ -568,13 +569,13 @@ export default function OntologyPage() {
                 {/* Legend — consistent Title Case */}
                 <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 10 }}>
                   {Object.entries(RELATION_COLOR).map(([rel, col]) => (
-                    <span key={rel} style={{ fontSize: 10, color: col, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span key={rel} style={{ fontSize: 11, color: col, display: 'flex', alignItems: 'center', gap: 4 }}>
                       <span style={{ width: 16, height: 2, background: col, display: 'inline-block' }}/>
                       {fmtRelation(rel)}
                     </span>
                   ))}
                   {Object.entries(DOMAIN_COLOR).filter(([d]) => d !== 'other').map(([d, c]) => (
-                    <span key={d} style={{ fontSize: 10, color: c, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span key={d} style={{ fontSize: 11, color: c, display: 'flex', alignItems: 'center', gap: 4 }}>
                       <span style={{ width: 8, height: 8, borderRadius: '50%', background: c, display: 'inline-block' }}/>
                       {fmtDomain(d)}
                     </span>
@@ -592,16 +593,16 @@ export default function OntologyPage() {
                   />
                 ) : stats?.top_nodes_by_pagerank?.length > 0 && (
                   <div style={{ background: '#1e293b', borderRadius: 8, border: '1px solid #334155', padding: 14 }}>
-                    <div style={{ color: '#64748b', fontSize: 11, marginBottom: 10, fontWeight: 600 }}>
+                    <div style={{ color: '#94a3b8', fontSize: 11, marginBottom: 10, fontWeight: 700, letterSpacing: '0.05em' }}>
                       TOP NODES BY PAGERANK
                     </div>
                     {stats.top_nodes_by_pagerank.map((n, i) => (
                       <div key={n.key} onClick={() => setSelected(n.key)}
                         style={{ display: 'flex', alignItems: 'center', gap: 8,
                           padding: '6px 0', borderBottom: '1px solid #0f172a', cursor: 'pointer' }}>
-                        <span style={{ color: '#475569', fontSize: 11, width: 16 }}>{i + 1}</span>
+                        <span style={{ color: '#64748b', fontSize: 11, width: 16 }}>{i + 1}</span>
                         <div style={{ flex: 1 }}>
-                          <div style={{ color: '#e2e8f0', fontSize: 12 }}>{n.name}</div>
+                          <div style={{ color: '#f1f5f9', fontSize: 12 }}>{n.name}</div>
                           <div style={{ color: DOMAIN_COLOR[n.domain] || '#94a3b8', fontSize: 10 }}>{fmtDomain(n.domain)}</div>
                         </div>
                         <div style={{ color: '#00AEEF', fontWeight: 700, fontSize: 13 }}>
@@ -614,16 +615,16 @@ export default function OntologyPage() {
 
                 {stats?.edge_type_distribution && (
                   <div style={{ background: '#1e293b', borderRadius: 8, border: '1px solid #334155', padding: 14 }}>
-                    <div style={{ color: '#64748b', fontSize: 11, marginBottom: 10, fontWeight: 600 }}>
+                    <div style={{ color: '#94a3b8', fontSize: 11, marginBottom: 10, fontWeight: 700, letterSpacing: '0.05em' }}>
                       RELATIONSHIP TYPES
                     </div>
                     {Object.entries(stats.edge_type_distribution).map(([rel, cnt]) => (
                       <div key={rel} style={{ display: 'flex', justifyContent: 'space-between',
                         alignItems: 'center', padding: '4px 0' }}>
-                        <span style={{ fontSize: 11, color: RELATION_COLOR[rel] || '#94a3b8' }}>
+                        <span style={{ fontSize: 12, color: RELATION_COLOR[rel] || '#94a3b8' }}>
                           {fmtRelation(rel)}
                         </span>
-                        <span style={{ color: '#e2e8f0', fontWeight: 600, fontSize: 12 }}>{cnt}</span>
+                        <span style={{ color: '#f1f5f9', fontWeight: 600, fontSize: 13 }}>{cnt}</span>
                       </div>
                     ))}
                   </div>
@@ -649,7 +650,7 @@ export default function OntologyPage() {
                   style={{ padding: '5px 14px', borderRadius: 999, fontSize: 12,
                     border: 'none', cursor: 'pointer', fontWeight: 500,
                     background: active ? '#0055A4' : '#334155',
-                    color:      active ? '#fff'    : '#94a3b8' }}>
+                    color:      active ? '#fff'    : '#e2e8f0' }}>
                   {f.label}{cnt > 0 && f.id !== 'all' ? ` (${cnt})` : ''}
                 </button>
               )
