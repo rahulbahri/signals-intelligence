@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import axios from 'axios'
-import { Network, RefreshCw, Sparkles, X, ChevronRight, AlertTriangle, Zap, ArrowRight } from 'lucide-react'
+import { Network, RefreshCw, Sparkles, X, ChevronRight, Zap, BarChart2 } from 'lucide-react'
 
 // ── Domain colours ────────────────────────────────────────────────────────
 const DOMAIN_COLOR = {
@@ -263,168 +263,165 @@ function NodeInspector({ nodeKey, nodes, edges, onClose }) {
   )
 }
 
-// ── Metric gauge bar ──────────────────────────────────────────────────────
-function Gauge({ label, value, color }) {
-  const pct = Math.round((value || 0) * 100)
-  return (
-    <div style={{ flex: 1 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-        <span style={{ fontSize: 11, color: '#94a3b8' }}>{label}</span>
-        <span style={{ fontSize: 12, fontWeight: 700, color }}>{pct}%</span>
-      </div>
-      <div style={{ height: 5, background: '#0f172a', borderRadius: 999, overflow: 'hidden' }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 999,
-          transition: 'width 0.6s ease' }}/>
-      </div>
-    </div>
-  )
+// ── Recommendation filter definitions ─────────────────────────────────────
+const REC_FILTERS = [
+  { id: 'all',              label: 'All types' },
+  { id: 'predictive_chain', label: 'Predictive chains' },
+  { id: 'untested_link',    label: 'Untested links' },
+  { id: 'bridge_node',      label: 'Bridge nodes' },
+  { id: 'cluster',          label: 'Metric clusters' },
+]
+
+const REC_TYPE_COLOR = {
+  untested_link:    '#00AEEF',
+  bridge_node:      '#8b5cf6',
+  cluster:          '#10b981',
+  predictive_chain: '#f59e0b',
 }
 
-// ── Recommendation side panel ─────────────────────────────────────────────
-function RecPanel({ rec, nodes, onClose }) {
-  const typeColor = {
-    untested_link: '#00AEEF',
-    bridge_node:   '#8b5cf6',
-    cluster:       '#10b981',
-  }[rec.rec_type] || '#94a3b8'
+// ── Recommendation card ────────────────────────────────────────────────────
+function RecCard({ rec, nodes, onDismiss }) {
+  const [expanded, setExpanded] = useState(false)
+  const typeColor = REC_TYPE_COLOR[rec.rec_type] || '#94a3b8'
 
   const pathNames = (rec.path || []).map(k => {
     const n = nodes.find(nd => nd.key === k)
-    return { key: k, name: n?.name || k, node: n }
+    return { key: k, name: n?.name || k.replace(/_/g, ' '), node: n }
   })
 
+  const lastNode  = pathNames[pathNames.length - 1]?.node
+  const actions   = lastNode?.corrective_actions || []
+  const firstNode = pathNames[0]?.node
+  const impacts   = (firstNode?.downstream_impact || [])
+    .map(k => nodes.find(n => n.key === k)).filter(Boolean)
+
   return (
-    <div style={{
-      position: 'fixed', top: 0, right: 0, bottom: 0, width: 420,
-      background: '#0f172a', borderLeft: `2px solid ${typeColor}33`,
-      boxShadow: '-8px 0 32px rgba(0,0,0,0.5)',
-      zIndex: 100, overflowY: 'auto', display: 'flex', flexDirection: 'column',
-    }}>
-      {/* Header */}
-      <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid #1e293b',
-        position: 'sticky', top: 0, background: '#0f172a', zIndex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <span style={{ fontSize: 10, padding: '3px 9px', borderRadius: 999,
-            background: typeColor + '22', color: typeColor, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            {rec.rec_type.replace(/_/g, ' ')}
-          </span>
-          <button onClick={onClose} style={{ background: '#1e293b', border: 'none', color: '#94a3b8',
-            cursor: 'pointer', borderRadius: 6, padding: '4px 8px', display: 'flex', alignItems: 'center' }}>
-            <X size={15}/>
-          </button>
+    <div style={{ background: '#1e293b', borderRadius: 10,
+      border: '1px solid #2d3f55', padding: '16px 18px', position: 'relative',
+      display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+      {/* Dismiss */}
+      <button onClick={() => onDismiss(rec.id)}
+        style={{ position: 'absolute', top: 12, right: 12, background: 'none',
+          border: 'none', color: '#475569', cursor: 'pointer', padding: 2,
+          display: 'flex', alignItems: 'center' }}>
+        <X size={14}/>
+      </button>
+
+      {/* Icon + Title */}
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', paddingRight: 24 }}>
+        <div style={{ width: 36, height: 36, borderRadius: 8,
+          background: typeColor + '22', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', flexShrink: 0 }}>
+          <BarChart2 size={18} style={{ color: typeColor }}/>
         </div>
-        <div style={{ color: '#f1f5f9', fontSize: 16, fontWeight: 700, lineHeight: 1.3 }}>{rec.title}</div>
-        <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 6 }}>{rec.description}</div>
+        <div style={{ color: '#f1f5f9', fontSize: 14, fontWeight: 600, lineHeight: 1.35 }}>
+          {rec.title}
+        </div>
       </div>
 
-      <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-        {/* Signal Metrics */}
-        <div>
-          <div style={{ color: '#475569', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
-            textTransform: 'uppercase', marginBottom: 12 }}>Signal Metrics</div>
-          <div style={{ display: 'flex', gap: 12, flexDirection: 'column' }}>
-            <Gauge label="Confidence" value={rec.confidence} color="#00AEEF"/>
-            <Gauge label="Novelty"    value={rec.novelty}    color="#8b5cf6"/>
-            <Gauge label="Impact"     value={rec.impact}     color="#10b981"/>
-          </div>
+      {/* Path chain pills */}
+      {pathNames.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center' }}>
+          {pathNames.map((item, i) => (
+            <span key={item.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 4,
+                background: '#0f172a', color: '#94a3b8', border: '1px solid #334155',
+                whiteSpace: 'nowrap' }}>
+                {item.name.toLowerCase()}
+              </span>
+              {i < pathNames.length - 1 && (
+                <span style={{ color: '#475569', fontSize: 13, lineHeight: 1 }}>→</span>
+              )}
+            </span>
+          ))}
         </div>
+      )}
 
-        {/* Causal Chain */}
-        {pathNames.length > 1 && (
-          <div>
-            <div style={{ color: '#475569', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
-              textTransform: 'uppercase', marginBottom: 12 }}>Causal Chain</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {pathNames.map((item, i) => (
-                <div key={item.key}>
-                  <div style={{ background: '#1e293b', borderRadius: 8, padding: '10px 12px',
-                    border: `1px solid ${DOMAIN_COLOR[item.node?.domain] || '#334155'}33` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                      <div style={{ width: 8, height: 8, borderRadius: '50%',
-                        background: DOMAIN_COLOR[item.node?.domain] || '#94a3b8', flexShrink: 0 }}/>
-                      <span style={{ color: '#e2e8f0', fontWeight: 600, fontSize: 13 }}>{item.name}</span>
-                      <span style={{ fontSize: 10, color: DOMAIN_COLOR[item.node?.domain] || '#94a3b8',
-                        marginLeft: 'auto' }}>
-                        {fmtDomain(item.node?.domain || '')}
-                      </span>
-                    </div>
-                    {/* Root causes for first node in chain */}
-                    {i === 0 && item.node?.root_causes?.length > 0 && (
-                      <div style={{ marginTop: 6 }}>
-                        <div style={{ color: '#475569', fontSize: 10, marginBottom: 4 }}>Root Causes</div>
-                        {item.node.root_causes.slice(0, 2).map((c, ci) => (
-                          <div key={ci} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginBottom: 3 }}>
-                            <AlertTriangle size={10} style={{ color: '#f59e0b', flexShrink: 0, marginTop: 1 }}/>
-                            <span style={{ color: '#94a3b8', fontSize: 11 }}>{c}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  {i < pathNames.length - 1 && (
-                    <div style={{ display: 'flex', justifyContent: 'center', padding: '3px 0' }}>
-                      <ArrowRight size={14} style={{ color: '#f59e0b', transform: 'rotate(90deg)' }}/>
-                    </div>
-                  )}
+      {/* Confidence / Novelty / Impact */}
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12, color: '#94a3b8' }}>
+          Confidence{' '}
+          <span style={{ color: '#00AEEF', fontWeight: 700 }}>
+            {Math.round((rec.confidence || 0) * 100)}%
+          </span>
+        </span>
+        <span style={{ fontSize: 12, color: '#94a3b8' }}>
+          Novelty{' '}
+          <span style={{ color: '#f59e0b', fontWeight: 700 }}>
+            {Math.round((rec.novelty || 0) * 100)}%
+          </span>
+        </span>
+        <span style={{ fontSize: 12, color: '#94a3b8' }}>
+          Impact{' '}
+          <span style={{ color: '#10b981', fontWeight: 700 }}>
+            {Math.round((rec.impact || 0) * 100)}%
+          </span>
+        </span>
+      </div>
+
+      {/* Expandable toggle */}
+      <button onClick={() => setExpanded(e => !e)}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+          background: 'none', border: 'none', color: '#64748b',
+          cursor: 'pointer', fontSize: 12, padding: 0, alignSelf: 'flex-start' }}>
+        <ChevronRight size={13} style={{
+          transform: expanded ? 'rotate(90deg)' : 'none',
+          transition: 'transform 0.15s' }}/>
+        {expanded ? 'Hide hypothesis & steps' : 'Show hypothesis & steps'}
+      </button>
+
+      {/* Expanded content */}
+      {expanded && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14,
+          paddingTop: 12, borderTop: '1px solid #0f172a' }}>
+
+          {rec.hypothesis && (
+            <div>
+              <div style={{ color: '#475569', fontSize: 10, fontWeight: 700,
+                letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
+                Hypothesis
+              </div>
+              <div style={{ background: '#0f172a', borderRadius: 8, padding: '10px 14px',
+                borderLeft: `3px solid ${typeColor}` }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <Sparkles size={13} style={{ color: typeColor, flexShrink: 0, marginTop: 1 }}/>
+                  <span style={{ color: '#cbd5e1', fontSize: 12, lineHeight: 1.5 }}>
+                    {rec.hypothesis}
+                  </span>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Hypothesis */}
-        {rec.hypothesis && (
-          <div>
-            <div style={{ color: '#475569', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
-              textTransform: 'uppercase', marginBottom: 10 }}>Hypothesis</div>
-            <div style={{ background: '#1e293b', borderRadius: 8, padding: 14,
-              borderLeft: `3px solid ${typeColor}` }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <Sparkles size={14} style={{ color: typeColor, flexShrink: 0, marginTop: 1 }}/>
-                <span style={{ color: '#cbd5e1', fontSize: 12, lineHeight: 1.5 }}>{rec.hypothesis}</span>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Corrective Actions — from the last node in path */}
-        {(() => {
-          const lastNode = pathNames[pathNames.length - 1]?.node
-          const actions = lastNode?.corrective_actions || []
-          if (!actions.length) return null
-          return (
+          {actions.length > 0 && (
             <div>
-              <div style={{ color: '#475569', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
-                textTransform: 'uppercase', marginBottom: 10 }}>Recommended Actions</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {actions.map((a, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start',
-                    background: '#1e293b', borderRadius: 8, padding: '10px 12px' }}>
-                    <div style={{ width: 20, height: 20, borderRadius: '50%', background: '#0055A4',
-                      color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex',
-                      alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{i + 1}</div>
-                    <span style={{ color: '#cbd5e1', fontSize: 12, lineHeight: 1.4 }}>{a}</span>
+              <div style={{ color: '#475569', fontSize: 10, fontWeight: 700,
+                letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
+                Steps
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {actions.slice(0, 3).map((a, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                    <div style={{ width: 18, height: 18, borderRadius: '50%',
+                      background: '#0055A4', color: '#fff', fontSize: 10, fontWeight: 700,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0 }}>{i + 1}</div>
+                    <span style={{ color: '#94a3b8', fontSize: 12, lineHeight: 1.4 }}>{a}</span>
                   </div>
                 ))}
               </div>
             </div>
-          )
-        })()}
+          )}
 
-        {/* Downstream Impact */}
-        {(() => {
-          const firstNode = pathNames[0]?.node
-          const impacts = firstNode?.downstream_impact || []
-          if (!impacts.length) return null
-          const impactNodes = impacts.map(k => nodes.find(n => n.key === k)).filter(Boolean)
-          if (!impactNodes.length) return null
-          return (
+          {impacts.length > 0 && (
             <div>
-              <div style={{ color: '#475569', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
-                textTransform: 'uppercase', marginBottom: 10 }}>Downstream Impact</div>
+              <div style={{ color: '#475569', fontSize: 10, fontWeight: 700,
+                letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
+                Downstream Impact
+              </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {impactNodes.map(n => (
+                {impacts.map(n => (
                   <span key={n.key} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999,
                     background: (DOMAIN_COLOR[n.domain] || '#94a3b8') + '22',
                     color: DOMAIN_COLOR[n.domain] || '#94a3b8',
@@ -434,54 +431,9 @@ function RecPanel({ rec, nodes, onClose }) {
                 ))}
               </div>
             </div>
-          )
-        })()}
-      </div>
-    </div>
-  )
-}
-
-// ── Recommendation card (clickable row) ───────────────────────────────────
-function RecCard({ rec, onClick, onDismiss }) {
-  const typeColor = {
-    untested_link: '#00AEEF',
-    bridge_node:   '#8b5cf6',
-    cluster:       '#10b981',
-  }[rec.rec_type] || '#94a3b8'
-
-  return (
-    <div onClick={onClick}
-      style={{ background: '#1e293b', borderRadius: 8, border: `1px solid ${typeColor}33`,
-        marginBottom: 8, padding: '14px 16px', cursor: 'pointer',
-        display: 'flex', alignItems: 'flex-start', gap: 12,
-        transition: 'border-color 0.15s', ':hover': { borderColor: typeColor } }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 999,
-            background: typeColor + '22', color: typeColor, fontWeight: 700,
-            textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0 }}>
-            {rec.rec_type.replace(/_/g, ' ')}
-          </span>
-          <span style={{ fontSize: 11, color: '#475569',
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {(rec.path || []).length > 1 &&
-              `${Math.round((rec.confidence || 0) * 100)}% confidence`}
-          </span>
+          )}
         </div>
-        <div style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 600, marginBottom: 3 }}>{rec.title}</div>
-        <div style={{ color: '#64748b', fontSize: 12,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {rec.description}
-        </div>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-        <ChevronRight size={16} style={{ color: '#475569' }}/>
-        <button onClick={e => { e.stopPropagation(); onDismiss(rec.id) }}
-          style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer',
-            padding: 2, display: 'flex', alignItems: 'center' }}>
-          <X size={14}/>
-        </button>
-      </div>
+      )}
     </div>
   )
 }
@@ -496,7 +448,7 @@ export default function OntologyPage() {
   const [selected, setSelected] = useState(null)
   const [discovering, setDisc]  = useState(false)
   const [loading, setLoading]   = useState(true)
-  const [panel, setPanel]       = useState(null)   // rec object for side panel
+  const [recFilter, setRecFilter] = useState('all')
 
   const loadData = useCallback(async (dom = domain) => {
     setLoading(true)
@@ -524,23 +476,17 @@ export default function OntologyPage() {
   async function dismiss(id) {
     await axios.post(`/api/ontology/recommendations/${id}/dismiss`)
     setRecs(r => r.filter(rec => rec.id !== id))
-    if (panel?.id === id) setPanel(null)
   }
+
+  const filteredRecs = recFilter === 'all'
+    ? recs
+    : recs.filter(r => r.rec_type === recFilter)
 
   const noData = !loading && graph.nodes.length === 0
   const DOMAINS = ['all', ...Object.keys(DOMAIN_COLOR).filter(d => d !== 'other')]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: '100%' }}>
-
-      {/* Side panel overlay */}
-      {panel && (
-        <>
-          <div onClick={() => setPanel(null)}
-            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 99 }}/>
-          <RecPanel rec={panel} nodes={graph.nodes} onClose={() => setPanel(null)}/>
-        </>
-      )}
 
       {/* Stat cards */}
       {stats && (
@@ -690,19 +636,44 @@ export default function OntologyPage() {
 
       {/* Recommendations tab */}
       {tab === 'recs' && (
-        <div style={{ maxWidth: 740 }}>
-          {recs.length === 0 ? (
+        <div>
+          {/* Filter pills */}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+            {REC_FILTERS.map(f => {
+              const active = recFilter === f.id
+              const cnt = f.id === 'all'
+                ? recs.length
+                : recs.filter(r => r.rec_type === f.id).length
+              return (
+                <button key={f.id} onClick={() => setRecFilter(f.id)}
+                  style={{ padding: '5px 14px', borderRadius: 999, fontSize: 12,
+                    border: 'none', cursor: 'pointer', fontWeight: 500,
+                    background: active ? '#0055A4' : '#334155',
+                    color:      active ? '#fff'    : '#94a3b8' }}>
+                  {f.label}{cnt > 0 && f.id !== 'all' ? ` (${cnt})` : ''}
+                </button>
+              )
+            })}
+          </div>
+
+          {filteredRecs.length === 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center',
-              padding: 40, background: '#f8fafc', borderRadius: 8, gap: 12 }}>
+              padding: 40, background: '#1e293b', borderRadius: 8, gap: 12 }}>
               <Sparkles size={40} color="#94a3b8"/>
-              <p style={{ color: '#64748b' }}>No recommendations yet — run Discovery first.</p>
+              <p style={{ color: '#64748b' }}>
+                {recs.length === 0
+                  ? 'No recommendations yet — run Discovery first.'
+                  : 'No recommendations of this type.'}
+              </p>
             </div>
           ) : (
-            recs.map(rec => (
-              <RecCard key={rec.id} rec={rec}
-                onClick={() => setPanel(rec)}
-                onDismiss={dismiss}/>
-            ))
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              {filteredRecs.map(rec => (
+                <RecCard key={rec.id} rec={rec}
+                  nodes={graph.nodes}
+                  onDismiss={dismiss}/>
+              ))}
+            </div>
           )}
         </div>
       )}
