@@ -916,6 +916,54 @@ export default function OntologyPage() {
           ) : (
             <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
+
+                {/* ── Map Key — compact bar, always above the canvas ── */}
+                <div style={{ marginBottom: 8, background: '#0f172a', borderRadius: 8,
+                  border: '1px solid #1e293b', padding: '8px 14px',
+                  display: 'flex', flexWrap: 'wrap', alignItems: 'center',
+                  columnGap: 20, rowGap: 6 }}>
+
+                  {/* Relationship types */}
+                  <span style={{ color: '#475569', fontSize: 10, fontWeight: 700,
+                    textTransform: 'uppercase', letterSpacing: '0.07em', flexShrink: 0 }}>
+                    Links
+                  </span>
+                  {Object.entries(RELATION_COLOR).map(([rel, col]) => (
+                    <div key={rel} style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                      <svg width="20" height="8" style={{ flexShrink: 0 }}>
+                        <line x1="0" y1="4" x2="14" y2="4" stroke={col} strokeWidth="2"
+                          strokeDasharray={rel === 'ANTI_CORRELATES' ? '3 2' : 'none'}/>
+                        <polygon points="14,1 20,4 14,7" fill={col} opacity="0.9"/>
+                      </svg>
+                      <span style={{ color: '#94a3b8', fontSize: 11 }}>{fmtRelation(rel)}</span>
+                    </div>
+                  ))}
+
+                  {/* Divider */}
+                  <span style={{ width: 1, height: 14, background: '#334155', flexShrink: 0 }}/>
+
+                  {/* Domains */}
+                  <span style={{ color: '#475569', fontSize: 10, fontWeight: 700,
+                    textTransform: 'uppercase', letterSpacing: '0.07em', flexShrink: 0 }}>
+                    Domains
+                  </span>
+                  {Object.entries(DOMAIN_COLOR).filter(([d]) => d !== 'other').map(([d, c]) => (
+                    <div key={d} style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                      <span style={{ width: 9, height: 9, borderRadius: '50%', background: c,
+                        display: 'inline-block', flexShrink: 0 }}/>
+                      <span style={{ color: '#94a3b8', fontSize: 11 }}>{fmtDomain(d)}</span>
+                    </div>
+                  ))}
+
+                  {/* Divider */}
+                  <span style={{ width: 1, height: 14, background: '#334155', flexShrink: 0 }}/>
+
+                  {/* Reading hints */}
+                  <span style={{ color: '#475569', fontSize: 11, flexShrink: 0 }}>
+                    ⬤ size = influence &nbsp;·&nbsp; click node to inspect &nbsp;·&nbsp; scroll to zoom
+                  </span>
+                </div>
+
                 {clusterView ? (
                   <ClusterGraph
                     nodes={graph.nodes}
@@ -931,63 +979,6 @@ export default function OntologyPage() {
                     onSelect={setSelected}
                   />
                 )}
-                {/* Legend panel */}
-                <div style={{ marginTop: 10, background: '#0f172a', borderRadius: 8,
-                  border: '1px solid #1e293b', padding: '12px 16px',
-                  display: 'grid', gridTemplateColumns: 'auto auto 1fr', gap: '0 28px', alignItems: 'start' }}>
-
-                  {/* Edge types */}
-                  <div>
-                    <div style={{ color: '#475569', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
-                      letterSpacing: '0.07em', marginBottom: 8 }}>Relationship Types</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {Object.entries(RELATION_COLOR).map(([rel, col]) => (
-                        <div key={rel} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <svg width="22" height="8" style={{ flexShrink: 0 }}>
-                            <line x1="0" y1="4" x2="16" y2="4" stroke={col} strokeWidth="2" strokeDasharray={rel === 'ANTI_CORRELATES' ? '3 2' : 'none'}/>
-                            <polygon points="16,1 22,4 16,7" fill={col} opacity="0.85"/>
-                          </svg>
-                          <span style={{ color: '#cbd5e1', fontSize: 12 }}>{fmtRelation(rel)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Domains */}
-                  <div>
-                    <div style={{ color: '#475569', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
-                      letterSpacing: '0.07em', marginBottom: 8 }}>KPI Domains</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {Object.entries(DOMAIN_COLOR).filter(([d]) => d !== 'other').map(([d, c]) => (
-                        <div key={d} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ width: 11, height: 11, borderRadius: '50%', background: c,
-                            display: 'inline-block', flexShrink: 0 }}/>
-                          <span style={{ color: '#cbd5e1', fontSize: 12 }}>{fmtDomain(d)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* How to read */}
-                  <div>
-                    <div style={{ color: '#475569', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
-                      letterSpacing: '0.07em', marginBottom: 8 }}>How to Read</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {[
-                        ['Node size',    'Bigger = more influential KPI'],
-                        ['Arrow direction', 'Shows direction of influence'],
-                        ['Line opacity', 'Stronger = higher correlation'],
-                        ['Click a node', 'Inspect connections & drivers'],
-                        ['Scroll / drag', 'Zoom and pan the graph'],
-                      ].map(([k, v]) => (
-                        <div key={k} style={{ display: 'flex', gap: 6, fontSize: 11 }}>
-                          <span style={{ color: '#64748b', whiteSpace: 'nowrap' }}>{k}:</span>
-                          <span style={{ color: '#94a3b8' }}>{v}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: 260, flexShrink: 0 }}>
