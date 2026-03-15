@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ReferenceLine, ReferenceArea, ResponsiveContainer, Legend
 } from 'recharts'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, Pin, X } from 'lucide-react'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const COLORS  = ['#0055A4','#059669','#d97706','#dc2626','#7c3aed','#ea580c','#0891b2','#db2777']
@@ -23,9 +23,56 @@ function badgeCls(s) {
   return { green:'badge-green', yellow:'badge-yellow', red:'badge-red', grey:'badge-grey' }[s] || 'badge-grey'
 }
 
+// ── Custom annotation label rendered inside the SVG ──────────────────────
+function AnnotationLabel({ viewBox, month }) {
+  if (!viewBox) return null
+  const { x, y } = viewBox
+  return (
+    <g>
+      <circle cx={x} cy={y + 8} r={6} fill="#f59e0b" opacity={0.9}/>
+      <text x={x} y={y + 12} textAnchor="middle" fontSize="8" fill="#fff" fontWeight="700">!</text>
+    </g>
+  )
+}
+
 export default function MonthlyTrend({ fingerprint, onKpiClick }) {
-  const [selected, setSelected] = useState(fingerprint?.slice(0, 4).map(k => k.key) || [])
-  const [normMode, setNormMode] = useState(false)
+  const [selected, setSelected]     = useState(fingerprint?.slice(0, 4).map(k => k.key) || [])
+  const [normMode, setNormMode]     = useState(false)
+  const [annotations, setAnnotations] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('si_month_annotations') || '{}') }
+    catch { return {} }
+  })
+  const [editingMonth, setEditingMonth] = useState(null)
+  const [editText, setEditText]         = useState('')
+  const inputRef = useRef(null)
+
+  function handleChartClick(data) {
+    if (!data?.activeLabel) return
+    setEditingMonth(data.activeLabel)
+    setEditText(annotations[data.activeLabel] || '')
+    setTimeout(() => inputRef.current?.focus(), 50)
+  }
+
+  function saveAnnotation() {
+    if (!editingMonth) return
+    const next = { ...annotations }
+    if (editText.trim()) {
+      next[editingMonth] = editText.trim()
+    } else {
+      delete next[editingMonth]
+    }
+    setAnnotations(next)
+    localStorage.setItem('si_month_annotations', JSON.stringify(next))
+    setEditingMonth(null)
+    setEditText('')
+  }
+
+  function deleteAnnotation(month) {
+    const next = { ...annotations }
+    delete next[month]
+    setAnnotations(next)
+    localStorage.setItem('si_month_annotations', JSON.stringify(next))
+  }
 
   const toggle = key => setSelected(s => s.includes(key) ? s.filter(x => x !== key) : [...s, key])
 
@@ -86,9 +133,10 @@ export default function MonthlyTrend({ fingerprint, onKpiClick }) {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-sm font-semibold text-slate-700">Overlaid KPI Trends — FY 2025</h3>
-              {normMode && (
-                <p className="text-xs text-slate-400 mt-0.5">All KPIs normalised to % of target · 100 = on target</p>
-              )}
+              <p className="text-xs text-slate-400 mt-0.5">
+                {normMode ? 'All KPIs normalised to % of target · 100 = on target · ' : ''}
+                <span className="text-amber-500 font-medium">Click any month to annotate an event</span>
+              </p>
             </div>
             <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
               <button
@@ -108,7 +156,8 @@ export default function MonthlyTrend({ fingerprint, onKpiClick }) {
             </div>
           </div>
           <ResponsiveContainer width="100%" height={360}>
-            <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+            <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}
+              onClick={handleChartClick} style={{ cursor: 'crosshair' }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9"/>
               <XAxis dataKey="month" tick={{ fill: '#64748b', fontSize: 11 }}/>
               <YAxis
@@ -142,8 +191,58 @@ export default function MonthlyTrend({ fingerprint, onKpiClick }) {
                   stroke={COLORS[fingerprint.indexOf(kpi) % COLORS.length]}
                   strokeDasharray="4 4" strokeOpacity={0.8} strokeWidth={1.5}/>
               ))}
+              {/* Annotation reference lines — amber vertical markers */}
+              {Object.keys(annotations).map(month => (
+                <ReferenceLine key={`ann-${month}`} x={month}
+                  stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="3 3" opacity={0.7}
+                  label={<AnnotationLabel month={month}/>}/>
+              ))}
             </LineChart>
           </ResponsiveContainer>
+
+          {/* Inline annotation editor */}
+          {editingMonth && (
+            <div className="mt-3 flex items-center gap-2 p-3 bg-amber-50 rounded-xl border border-amber-200 animate-fade-in">
+              <Pin size={13} className="text-amber-500 flex-shrink-0"/>
+              <span className="text-xs font-bold text-amber-800 flex-shrink-0 w-8">{editingMonth}</span>
+              <input
+                ref={inputRef}
+                value={editText}
+                onChange={e => setEditText(e.target.value)}
+                onKeyDown={e => {
+                  e.stopPropagation()
+                  if (e.key === 'Enter') { e.preventDefault(); saveAnnotation() }
+                  if (e.key === 'Escape') { e.preventDefault(); setEditingMonth(null); setEditText('') }
+                }}
+                placeholder="Add event note for this month… (Enter to save, Esc to cancel)"
+                className="flex-1 text-xs border border-amber-300 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400 placeholder-amber-300"/>
+              <button onClick={saveAnnotation}
+                className="text-xs px-3 py-1.5 bg-amber-500 text-white rounded-lg font-semibold hover:bg-amber-600 transition-colors flex-shrink-0">
+                Save
+              </button>
+              <button onClick={() => { setEditingMonth(null); setEditText('') }}
+                className="text-amber-400 hover:text-amber-700 flex-shrink-0">
+                <X size={14}/>
+              </button>
+            </div>
+          )}
+
+          {/* Annotation tags strip */}
+          {Object.keys(annotations).length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {Object.entries(annotations).map(([month, text]) => (
+                <span key={month}
+                  className="inline-flex items-center gap-1.5 text-[11px] bg-amber-50 border border-amber-200 text-amber-800 px-2.5 py-1 rounded-full cursor-pointer hover:border-amber-400 transition-colors"
+                  onClick={() => { setEditingMonth(month); setEditText(text); setTimeout(() => inputRef.current?.focus(), 50) }}>
+                  <Pin size={9} className="text-amber-500"/>
+                  <strong>{month}:</strong> {text}
+                  <button
+                    onClick={e => { e.stopPropagation(); deleteAnnotation(month) }}
+                    className="ml-0.5 text-amber-400 hover:text-amber-700 font-bold leading-none">×</button>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
