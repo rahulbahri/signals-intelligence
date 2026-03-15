@@ -259,7 +259,7 @@ function ForceGraph({ nodes, edges, selected, onSelect }) {
                 x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}
                 stroke={col}
                 strokeWidth={Math.max(0.5, (e.strength || 0.4) * 2)}
-                opacity={dimmed ? 0.05 : 0.40}
+                opacity={dimmed ? 0.05 : 0.70}
                 markerEnd={`url(#arr-${e.relation})`}
               />
             )
@@ -276,10 +276,12 @@ function ForceGraph({ nodes, edges, selected, onSelect }) {
               <g key={n.key} data-node="true"
                 onClick={() => onSelect(isSelected ? null : n.key)}
                 style={{ cursor: 'pointer' }} opacity={dimmed ? 0.12 : 1}>
+                {/* glow halo */}
+                <circle cx={p.x} cy={p.y} r={r + 5} fill={col} opacity={0.18}/>
                 {isSelected && (
-                  <circle cx={p.x} cy={p.y} r={r + 8} fill="none" stroke={col} strokeWidth={2} opacity={0.5}/>
+                  <circle cx={p.x} cy={p.y} r={r + 10} fill="none" stroke={col} strokeWidth={2} opacity={0.7}/>
                 )}
-                <circle cx={p.x} cy={p.y} r={r} fill={col} opacity={0.85}/>
+                <circle cx={p.x} cy={p.y} r={r} fill={col} opacity={1}/>
                 <text x={p.x} y={p.y + r + 12} textAnchor="middle"
                   fontSize="11" fill="#f1f5f9" style={{ pointerEvents: 'none' }}>
                   {n.name}
@@ -405,8 +407,8 @@ function ClusterGraph({ nodes, edges, selected, onSelect }) {
             const col = RELATION_COLOR[e.relation] || '#64748b'
             return (
               <line key={i} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}
-                stroke={col} strokeWidth={1}
-                opacity={dimmed ? 0.04 : 0.28}
+                stroke={col} strokeWidth={1.5}
+                opacity={dimmed ? 0.04 : 0.65}
                 markerEnd={`url(#cl-arr-${e.relation})`}/>
             )
           })}
@@ -423,10 +425,12 @@ function ClusterGraph({ nodes, edges, selected, onSelect }) {
               <g key={n.key} data-node="true"
                 onClick={() => onSelect(isSel ? null : n.key)}
                 style={{ cursor: 'pointer' }} opacity={dimmed ? 0.12 : 1}>
+                {/* glow halo */}
+                <circle cx={p.x} cy={p.y} r={r + 5} fill={col} opacity={0.18}/>
                 {isSel && (
-                  <circle cx={p.x} cy={p.y} r={r + 7} fill="none" stroke={col} strokeWidth={2} opacity={0.5}/>
+                  <circle cx={p.x} cy={p.y} r={r + 9} fill="none" stroke={col} strokeWidth={2} opacity={0.7}/>
                 )}
-                <circle cx={p.x} cy={p.y} r={r} fill={col} opacity={0.88}/>
+                <circle cx={p.x} cy={p.y} r={r} fill={col} opacity={1}/>
                 <text x={p.x} y={p.y + r + 12} textAnchor="middle"
                   fontSize="11" fill="#f1f5f9" style={{ pointerEvents: 'none' }}>
                   {n.name}
