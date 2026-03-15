@@ -191,6 +191,138 @@ function ForceGraph({ nodes, edges, selected, onSelect }) {
   )
 }
 
+// ── Cluster View ─────────────────────────────────────────────────────────
+function ClusterGraph({ nodes, edges, selected, onSelect }) {
+  const W = 900, H = 750
+
+  // Group nodes by domain
+  const byDomain = useMemo(() => {
+    const map = {}
+    nodes.forEach(n => {
+      const d = n.domain || 'other'
+      if (!map[d]) map[d] = []
+      map[d].push(n)
+    })
+    return map
+  }, [nodes])
+
+  // Lay out domain cluster centres in a grid
+  const clusterPos = useMemo(() => {
+    const domains = Object.keys(byDomain)
+    const COLS = 3
+    const xStep = W / COLS
+    const yStart = 100
+    const yStep = 220
+    const pos = {}
+    domains.forEach((d, i) => {
+      pos[d] = {
+        x: (i % COLS + 0.5) * xStep,
+        y: yStart + Math.floor(i / COLS) * yStep,
+      }
+    })
+    return pos
+  }, [byDomain])
+
+  // Compute per-node positions — arranged in a small circle around cluster centre
+  const nodePos = useMemo(() => {
+    const pos = {}
+    Object.entries(byDomain).forEach(([d, dnodes]) => {
+      const centre = clusterPos[d]
+      if (!centre) return
+      const R = Math.min(70, 28 + dnodes.length * 7)
+      dnodes.forEach((n, i) => {
+        const angle = (i / Math.max(dnodes.length, 1)) * Math.PI * 2 - Math.PI / 2
+        pos[n.key] = {
+          x: centre.x + R * Math.cos(angle),
+          y: centre.y + R * Math.sin(angle),
+        }
+      })
+    })
+    return pos
+  }, [byDomain, clusterPos])
+
+  const neighborSet = useMemo(() => {
+    if (!selected) return null
+    const s = new Set([selected])
+    edges.forEach(e => {
+      if (e.source === selected) s.add(e.target)
+      if (e.target === selected) s.add(e.source)
+    })
+    return s
+  }, [selected, edges])
+
+  return (
+    <svg width="100%" height="750" viewBox={`0 0 ${W} ${H}`}
+      style={{ background: '#0f172a', borderRadius: 8, display: 'block' }}>
+      <defs>
+        {Object.entries(RELATION_COLOR).map(([rel, col]) => (
+          <marker key={rel} id={`cl-arr-${rel}`} markerWidth="6" markerHeight="6"
+            refX="5" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L6,3 z" fill={col} opacity="0.7"/>
+          </marker>
+        ))}
+      </defs>
+
+      {/* Domain bubble backgrounds */}
+      {Object.entries(clusterPos).map(([d, pos]) => {
+        const dnodes = byDomain[d] || []
+        const R = Math.min(85, 40 + dnodes.length * 8)
+        const col = DOMAIN_COLOR[d] || '#94a3b8'
+        return (
+          <g key={d}>
+            <circle cx={pos.x} cy={pos.y} r={R + 18}
+              fill={col} fillOpacity={0.05}
+              stroke={col} strokeOpacity={0.20} strokeWidth={1.5} strokeDasharray="5 4"/>
+            <text x={pos.x} y={pos.y - R - 10}
+              textAnchor="middle" fontSize="11" fontWeight="700"
+              fill={col} opacity={0.9}
+              style={{ letterSpacing: '0.07em', textTransform: 'uppercase', pointerEvents: 'none' }}>
+              {fmtDomain(d)}
+            </text>
+          </g>
+        )
+      })}
+
+      {/* Edges */}
+      {edges.map((e, i) => {
+        const pa = nodePos[e.source], pb = nodePos[e.target]
+        if (!pa || !pb) return null
+        const dimmed = neighborSet && !neighborSet.has(e.source) && !neighborSet.has(e.target)
+        const col = RELATION_COLOR[e.relation] || '#64748b'
+        return (
+          <line key={i} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}
+            stroke={col} strokeWidth={1}
+            opacity={dimmed ? 0.04 : 0.30}
+            markerEnd={`url(#cl-arr-${e.relation})`}/>
+        )
+      })}
+
+      {/* Nodes */}
+      {nodes.map(n => {
+        const p = nodePos[n.key]
+        if (!p) return null
+        const dimmed = neighborSet && !neighborSet.has(n.key)
+        const r = 4 + (n.centrality || 0) * 14
+        const col = DOMAIN_COLOR[n.domain] || '#94a3b8'
+        const isSel = selected === n.key
+        return (
+          <g key={n.key} onClick={() => onSelect(isSel ? null : n.key)}
+            style={{ cursor: 'pointer' }} opacity={dimmed ? 0.15 : 1}>
+            {isSel && (
+              <circle cx={p.x} cy={p.y} r={r + 5} fill="none" stroke={col} strokeWidth={2} opacity={0.5}/>
+            )}
+            <circle cx={p.x} cy={p.y} r={r} fill={col} opacity={0.88}/>
+            <text x={p.x} y={p.y + r + 9} textAnchor="middle"
+              fontSize="8" fill="#cbd5e1" style={{ pointerEvents: 'none' }}>
+              {n.name}
+            </text>
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
 // ── Node inspector ────────────────────────────────────────────────────────
 function NodeInspector({ nodeKey, nodes, edges, onClose }) {
   const node = nodes.find(n => n.key === nodeKey)
@@ -449,6 +581,7 @@ export default function OntologyPage() {
   const [discovering, setDisc]  = useState(false)
   const [loading, setLoading]   = useState(true)
   const [recFilter, setRecFilter] = useState('all')
+  const [clusterView, setClusterView] = useState(false)
 
   const loadData = useCallback(async (dom = domain) => {
     setLoading(true)
@@ -582,16 +715,36 @@ export default function OntologyPage() {
       {/* Knowledge Graph tab */}
       {tab === 'graph' && (
         <>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {DOMAINS.map(d => (
-              <button key={d} onClick={() => setDomain(d)}
-                style={{ padding: '4px 12px', borderRadius: 999, fontSize: 12, border: 'none',
-                  cursor: 'pointer', fontWeight: 500,
-                  background: domain === d ? (DOMAIN_COLOR[d] || '#0055A4') : '#334155',
-                  color: domain === d ? '#fff' : '#e2e8f0' }}>
-                {d === 'all' ? 'All Domains' : fmtDomain(d)}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {DOMAINS.map(d => (
+                <button key={d} onClick={() => setDomain(d)}
+                  style={{ padding: '4px 12px', borderRadius: 999, fontSize: 12, border: 'none',
+                    cursor: 'pointer', fontWeight: 500,
+                    background: domain === d ? (DOMAIN_COLOR[d] || '#0055A4') : '#334155',
+                    color: domain === d ? '#fff' : '#e2e8f0' }}>
+                  {d === 'all' ? 'All Domains' : fmtDomain(d)}
+                </button>
+              ))}
+            </div>
+            {/* Cluster View toggle */}
+            <div style={{ display: 'flex', alignItems: 'center', background: '#1e293b',
+              borderRadius: 8, padding: 3, gap: 2, border: '1px solid #334155', flexShrink: 0 }}>
+              <button onClick={() => setClusterView(false)}
+                style={{ padding: '4px 12px', borderRadius: 6, fontSize: 11, border: 'none',
+                  cursor: 'pointer', fontWeight: 600,
+                  background: !clusterView ? '#0055A4' : 'transparent',
+                  color: !clusterView ? '#fff' : '#94a3b8' }}>
+                Force Layout
               </button>
-            ))}
+              <button onClick={() => setClusterView(true)}
+                style={{ padding: '4px 12px', borderRadius: 6, fontSize: 11, border: 'none',
+                  cursor: 'pointer', fontWeight: 600,
+                  background: clusterView ? '#0055A4' : 'transparent',
+                  color: clusterView ? '#fff' : '#94a3b8' }}>
+                Cluster View
+              </button>
+            </div>
           </div>
 
           {noData ? (
@@ -608,12 +761,21 @@ export default function OntologyPage() {
           ) : (
             <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <ForceGraph
-                  nodes={graph.nodes}
-                  edges={graph.edges}
-                  selected={selected}
-                  onSelect={setSelected}
-                />
+                {clusterView ? (
+                  <ClusterGraph
+                    nodes={graph.nodes}
+                    edges={graph.edges}
+                    selected={selected}
+                    onSelect={setSelected}
+                  />
+                ) : (
+                  <ForceGraph
+                    nodes={graph.nodes}
+                    edges={graph.edges}
+                    selected={selected}
+                    onSelect={setSelected}
+                  />
+                )}
                 {/* Legend — consistent Title Case */}
                 <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 10 }}>
                   {Object.entries(RELATION_COLOR).map(([rel, col]) => (
