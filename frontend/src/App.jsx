@@ -3,7 +3,7 @@ import axios from 'axios'
 import {
   LayoutDashboard, Fingerprint, TrendingUp,
   Upload, Code2, RefreshCw, ChevronRight,
-  Activity, GitBranch, Network
+  Activity, GitBranch, Network, Layers
 } from 'lucide-react'
 import Scorecard from './components/Scorecard.jsx'
 import Fingerprint2 from './components/Fingerprint.jsx'
@@ -16,18 +16,21 @@ import AiQueryPanel from './components/AiQueryPanel.jsx'
 import ProjectionBridge from './components/ProjectionBridge.jsx'
 import MonthRangeFilter from './components/MonthRangeFilter.jsx'
 import OntologyPage from './components/OntologyPage.jsx'
+import BoardReady from './components/BoardReady.jsx'
 
 const TABS = [
+  { id: 'board',       label: 'Board Ready',       Icon: Layers          },
   { id: 'dashboard',   label: 'Command Center',    Icon: LayoutDashboard },
   { id: 'fingerprint', label: 'Org Fingerprint',   Icon: Fingerprint     },
   { id: 'trends',      label: 'Monthly Trends',    Icon: TrendingUp      },
   { id: 'projection',  label: 'Bridge Analysis',   Icon: GitBranch       },
   { id: 'ontology',    label: 'Data Ontology',     Icon: Network         },
-  { id: 'upload',      label: 'Data Upload',        Icon: Upload          },
-  { id: 'api',         label: 'API Reference',      Icon: Code2           },
+  { id: 'upload',      label: 'Data Upload',       Icon: Upload          },
+  { id: 'api',         label: 'API Reference',     Icon: Code2           },
 ]
 
 const PAGE_TITLES = {
+  board:       'Board Ready Brief',
   dashboard:   'Actionable Intelligence Command Center',
   fingerprint: 'Organisational Fingerprint',
   trends:      'Monthly KPI Trends',
@@ -253,10 +256,19 @@ export default function App() {
               <button
                 key={id}
                 onClick={() => setTab(id)}
-                className={`sidebar-link w-full text-left ${tab === id ? 'active' : ''}`}
+                className={`sidebar-link w-full text-left ${tab === id ? 'active' : ''} ${
+                  id === 'board' && tab !== 'board'
+                    ? 'border border-[#00AEEF]/30 bg-[#00AEEF]/10 !text-[#00AEEF] mb-1'
+                    : ''
+                }`}
               >
                 <Icon size={15} className="flex-shrink-0" />
                 <span className="flex-1">{label}</span>
+                {id === 'board' && tab !== 'board' && (
+                  <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-[#00AEEF]/20 text-[#00AEEF] uppercase tracking-wider">
+                    New
+                  </span>
+                )}
                 {tab === id && <ChevronRight size={12} className="text-[#00AEEF]" />}
               </button>
             ))}
@@ -344,6 +356,13 @@ export default function App() {
 
           {!loading && !noData && (
             <>
+              {tab === 'board' && (
+                <BoardReady
+                  fingerprint={filteredFingerprint}
+                  bridgeData={filteredBridgeData}
+                  onNavigate={setTab}
+                />
+              )}
               {tab === 'dashboard'   && (
                 <>
                   <SummaryBar summary={filteredSummary} onRefresh={loadAll} onSeed={seedDemo}/>
