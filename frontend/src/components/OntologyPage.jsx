@@ -107,7 +107,7 @@ function ZoomControls({ scale, zoomBy, reset }) {
       {btn('+', () => zoomBy(1.3))}
       {btn('−', () => zoomBy(1 / 1.3))}
       {btn('Reset', reset)}
-      <div style={{ textAlign: 'center', color: '#64748b', fontSize: 9, fontWeight: 600, marginTop: 2 }}>
+      <div style={{ textAlign: 'center', color: '#e2e8f0', fontSize: 9, fontWeight: 600, marginTop: 2 }}>
         {Math.round(scale * 100)}%
       </div>
     </div>
@@ -281,7 +281,7 @@ function ForceGraph({ nodes, edges, selected, onSelect }) {
                 )}
                 <circle cx={p.x} cy={p.y} r={r} fill={col} opacity={0.85}/>
                 <text x={p.x} y={p.y + r + 12} textAnchor="middle"
-                  fontSize="11" fill="#cbd5e1" style={{ pointerEvents: 'none' }}>
+                  fontSize="11" fill="#f1f5f9" style={{ pointerEvents: 'none' }}>
                   {n.name}
                 </text>
               </g>
@@ -291,7 +291,7 @@ function ForceGraph({ nodes, edges, selected, onSelect }) {
       </svg>
       <ZoomControls scale={scale} zoomBy={zoomBy} reset={reset}/>
       <div style={{ position: 'absolute', bottom: 14, left: 14, background: '#0f172acc',
-        borderRadius: 5, padding: '3px 8px', color: '#64748b', fontSize: 10, pointerEvents: 'none' }}>
+        borderRadius: 5, padding: '3px 8px', color: '#e2e8f0', fontSize: 10, pointerEvents: 'none' }}>
         Scroll to zoom · Drag to pan
       </div>
     </div>
@@ -428,7 +428,7 @@ function ClusterGraph({ nodes, edges, selected, onSelect }) {
                 )}
                 <circle cx={p.x} cy={p.y} r={r} fill={col} opacity={0.88}/>
                 <text x={p.x} y={p.y + r + 12} textAnchor="middle"
-                  fontSize="11" fill="#cbd5e1" style={{ pointerEvents: 'none' }}>
+                  fontSize="11" fill="#f1f5f9" style={{ pointerEvents: 'none' }}>
                   {n.name}
                 </text>
               </g>
@@ -438,7 +438,7 @@ function ClusterGraph({ nodes, edges, selected, onSelect }) {
       </svg>
       <ZoomControls scale={scale} zoomBy={zoomBy} reset={reset}/>
       <div style={{ position: 'absolute', bottom: 14, left: 14, background: '#0f172acc',
-        borderRadius: 5, padding: '3px 8px', color: '#64748b', fontSize: 10, pointerEvents: 'none' }}>
+        borderRadius: 5, padding: '3px 8px', color: '#e2e8f0', fontSize: 10, pointerEvents: 'none' }}>
         Scroll to zoom · Drag to pan
       </div>
     </div>
@@ -470,9 +470,9 @@ function NodeInspector({ nodeKey, nodes, edges, onClose }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
         <div>
           <div style={{ fontWeight: 700, color: col, fontSize: 14, lineHeight: 1.2 }}>{node.name}</div>
-          <div style={{ color: '#64748b', fontSize: 11, marginTop: 2 }}>{fmtDomain(node.domain)} domain</div>
+          <div style={{ color: '#e2e8f0', fontSize: 11, marginTop: 2 }}>{fmtDomain(node.domain)} domain</div>
         </div>
-        <button onClick={onClose} style={{ color: '#64748b', background: 'none', border: 'none', cursor: 'pointer', padding: 2, marginLeft: 8, flexShrink: 0 }}>
+        <button onClick={onClose} style={{ color: '#e2e8f0', background: 'none', border: 'none', cursor: 'pointer', padding: 2, marginLeft: 8, flexShrink: 0 }}>
           <X size={14}/>
         </button>
       </div>
@@ -481,7 +481,7 @@ function NodeInspector({ nodeKey, nodes, edges, onClose }) {
       <div style={{ background: influence.color + '18', border: `1px solid ${influence.color}44`,
         borderRadius: 6, padding: '7px 10px', marginBottom: 12 }}>
         <div style={{ color: influence.color, fontSize: 11, fontWeight: 700 }}>{influence.label}</div>
-        <div style={{ color: '#94a3b8', fontSize: 10, marginTop: 2, lineHeight: 1.4 }}>{influence.desc}</div>
+        <div style={{ color: '#e2e8f0', fontSize: 10, marginTop: 2, lineHeight: 1.4 }}>{influence.desc}</div>
       </div>
 
       {/* Key stats — 3 meaningful metrics */}
@@ -494,7 +494,7 @@ function NodeInspector({ nodeKey, nodes, edges, onClose }) {
           <div key={label} style={{ background: '#0f172a', borderRadius: 6, padding: '7px 8px', textAlign: 'center' }}
             title={tip}>
             <div style={{ color: '#f1f5f9', fontWeight: 700, fontSize: 18, lineHeight: 1 }}>{val}</div>
-            <div style={{ color: '#64748b', fontSize: 9, marginTop: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
+            <div style={{ color: '#e2e8f0', fontSize: 9, marginTop: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
           </div>
         ))}
       </div>
@@ -502,7 +502,7 @@ function NodeInspector({ nodeKey, nodes, edges, onClose }) {
       {/* Outgoing — "This KPI drives…" */}
       {outgoing.length > 0 && (
         <div style={{ marginBottom: 10 }}>
-          <div style={{ color: '#64748b', fontSize: 10, fontWeight: 700, marginBottom: 5,
+          <div style={{ color: '#e2e8f0', fontSize: 10, fontWeight: 700, marginBottom: 5,
             textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             ▶ This KPI drives
           </div>
@@ -526,7 +526,7 @@ function NodeInspector({ nodeKey, nodes, edges, onClose }) {
       {/* Incoming — "Influenced by…" */}
       {incoming.length > 0 && (
         <div>
-          <div style={{ color: '#64748b', fontSize: 10, fontWeight: 700, marginBottom: 5,
+          <div style={{ color: '#e2e8f0', fontSize: 10, fontWeight: 700, marginBottom: 5,
             textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             ◀ Influenced by
           </div>
@@ -590,7 +590,7 @@ function RecCard({ rec, nodes, onDismiss }) {
       {/* Dismiss */}
       <button onClick={() => onDismiss(rec.id)}
         style={{ position: 'absolute', top: 12, right: 12, background: 'none',
-          border: 'none', color: '#64748b', cursor: 'pointer', padding: 2,
+          border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 2,
           display: 'flex', alignItems: 'center' }}>
         <X size={14}/>
       </button>
@@ -613,12 +613,12 @@ function RecCard({ rec, nodes, onDismiss }) {
           {pathNames.map((item, i) => (
             <span key={item.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
               <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 4,
-                background: '#0f172a', color: '#cbd5e1', border: '1px solid #475569',
+                background: '#0f172a', color: '#e2e8f0', border: '1px solid #475569',
                 whiteSpace: 'nowrap' }}>
                 {item.name.toLowerCase()}
               </span>
               {i < pathNames.length - 1 && (
-                <span style={{ color: '#94a3b8', fontSize: 13, lineHeight: 1 }}>→</span>
+                <span style={{ color: '#e2e8f0', fontSize: 13, lineHeight: 1 }}>→</span>
               )}
             </span>
           ))}
@@ -627,19 +627,19 @@ function RecCard({ rec, nodes, onDismiss }) {
 
       {/* Confidence / Novelty / Impact */}
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, color: '#cbd5e1' }}>
+        <span style={{ fontSize: 12, color: '#e2e8f0' }}>
           Confidence{' '}
           <span style={{ color: '#00AEEF', fontWeight: 700 }}>
             {Math.round((rec.confidence || 0) * 100)}%
           </span>
         </span>
-        <span style={{ fontSize: 12, color: '#cbd5e1' }}>
+        <span style={{ fontSize: 12, color: '#e2e8f0' }}>
           Novelty{' '}
           <span style={{ color: '#f59e0b', fontWeight: 700 }}>
             {Math.round((rec.novelty || 0) * 100)}%
           </span>
         </span>
-        <span style={{ fontSize: 12, color: '#cbd5e1' }}>
+        <span style={{ fontSize: 12, color: '#e2e8f0' }}>
           Impact{' '}
           <span style={{ color: '#10b981', fontWeight: 700 }}>
             {Math.round((rec.impact || 0) * 100)}%
@@ -650,7 +650,7 @@ function RecCard({ rec, nodes, onDismiss }) {
       {/* Expandable toggle */}
       <button onClick={() => setExpanded(e => !e)}
         style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
-          background: 'none', border: 'none', color: '#94a3b8',
+          background: 'none', border: 'none', color: '#e2e8f0',
           cursor: 'pointer', fontSize: 12, padding: 0, alignSelf: 'flex-start' }}>
         <ChevronRight size={13} style={{
           transform: expanded ? 'rotate(90deg)' : 'none',
@@ -665,7 +665,7 @@ function RecCard({ rec, nodes, onDismiss }) {
 
           {rec.hypothesis && (
             <div>
-              <div style={{ color: '#64748b', fontSize: 10, fontWeight: 700,
+              <div style={{ color: '#e2e8f0', fontSize: 10, fontWeight: 700,
                 letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
                 Hypothesis
               </div>
@@ -673,7 +673,7 @@ function RecCard({ rec, nodes, onDismiss }) {
                 borderLeft: `3px solid ${typeColor}` }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                   <Sparkles size={13} style={{ color: typeColor, flexShrink: 0, marginTop: 1 }}/>
-                  <span style={{ color: '#cbd5e1', fontSize: 12, lineHeight: 1.5 }}>
+                  <span style={{ color: '#e2e8f0', fontSize: 12, lineHeight: 1.5 }}>
                     {rec.hypothesis}
                   </span>
                 </div>
@@ -683,7 +683,7 @@ function RecCard({ rec, nodes, onDismiss }) {
 
           {actions.length > 0 && (
             <div>
-              <div style={{ color: '#64748b', fontSize: 10, fontWeight: 700,
+              <div style={{ color: '#e2e8f0', fontSize: 10, fontWeight: 700,
                 letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
                 Steps
               </div>
@@ -694,7 +694,7 @@ function RecCard({ rec, nodes, onDismiss }) {
                       background: '#0055A4', color: '#fff', fontSize: 10, fontWeight: 700,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       flexShrink: 0 }}>{i + 1}</div>
-                    <span style={{ color: '#cbd5e1', fontSize: 12, lineHeight: 1.4 }}>{a}</span>
+                    <span style={{ color: '#e2e8f0', fontSize: 12, lineHeight: 1.4 }}>{a}</span>
                   </div>
                 ))}
               </div>
@@ -703,7 +703,7 @@ function RecCard({ rec, nodes, onDismiss }) {
 
           {impacts.length > 0 && (
             <div>
-              <div style={{ color: '#64748b', fontSize: 10, fontWeight: 700,
+              <div style={{ color: '#e2e8f0', fontSize: 10, fontWeight: 700,
                 letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
                 Downstream Impact
               </div>
@@ -787,9 +787,9 @@ export default function OntologyPage() {
               sub: Object.entries(stats.domain_distribution || {}).map(([d,c]) => `${fmtDomain(d)}:${c}`).join(' · ') },
           ].map(({ label, value, sub }) => (
             <div key={label} className="card" style={{ padding: 16 }}>
-              <div style={{ color: '#475569', fontSize: 11, fontWeight: 600, marginBottom: 4 }}>{label}</div>
+              <div style={{ color: '#e2e8f0', fontSize: 11, fontWeight: 600, marginBottom: 4 }}>{label}</div>
               <div style={{ color: '#0055A4', fontSize: 28, fontWeight: 700 }}>{value}</div>
-              <div style={{ color: '#64748b', fontSize: 11 }}>{sub}</div>
+              <div style={{ color: '#e2e8f0', fontSize: 11 }}>{sub}</div>
             </div>
           ))}
         </div>
@@ -907,7 +907,7 @@ export default function OntologyPage() {
               alignItems: 'center', justifyContent: 'center', gap: 12,
               background: '#f8fafc', borderRadius: 8, padding: 40 }}>
               <Network size={48} color="#94a3b8"/>
-              <p style={{ color: '#64748b', fontSize: 15 }}>No ontology data yet</p>
+              <p style={{ color: '#e2e8f0', fontSize: 15 }}>No ontology data yet</p>
               <button onClick={discover} style={{ padding: '8px 20px', background: '#0055A4',
                 color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>
                 Run Discovery
@@ -924,7 +924,7 @@ export default function OntologyPage() {
                   columnGap: 20, rowGap: 6 }}>
 
                   {/* Relationship types */}
-                  <span style={{ color: '#475569', fontSize: 10, fontWeight: 700,
+                  <span style={{ color: '#e2e8f0', fontSize: 10, fontWeight: 700,
                     textTransform: 'uppercase', letterSpacing: '0.07em', flexShrink: 0 }}>
                     Links
                   </span>
@@ -935,7 +935,7 @@ export default function OntologyPage() {
                           strokeDasharray={rel === 'ANTI_CORRELATES' ? '3 2' : 'none'}/>
                         <polygon points="14,1 20,4 14,7" fill={col} opacity="0.9"/>
                       </svg>
-                      <span style={{ color: '#94a3b8', fontSize: 11 }}>{fmtRelation(rel)}</span>
+                      <span style={{ color: '#e2e8f0', fontSize: 11 }}>{fmtRelation(rel)}</span>
                     </div>
                   ))}
 
@@ -943,7 +943,7 @@ export default function OntologyPage() {
                   <span style={{ width: 1, height: 14, background: '#334155', flexShrink: 0 }}/>
 
                   {/* Domains */}
-                  <span style={{ color: '#475569', fontSize: 10, fontWeight: 700,
+                  <span style={{ color: '#e2e8f0', fontSize: 10, fontWeight: 700,
                     textTransform: 'uppercase', letterSpacing: '0.07em', flexShrink: 0 }}>
                     Domains
                   </span>
@@ -951,7 +951,7 @@ export default function OntologyPage() {
                     <div key={d} style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
                       <span style={{ width: 9, height: 9, borderRadius: '50%', background: c,
                         display: 'inline-block', flexShrink: 0 }}/>
-                      <span style={{ color: '#94a3b8', fontSize: 11 }}>{fmtDomain(d)}</span>
+                      <span style={{ color: '#e2e8f0', fontSize: 11 }}>{fmtDomain(d)}</span>
                     </div>
                   ))}
 
@@ -959,7 +959,7 @@ export default function OntologyPage() {
                   <span style={{ width: 1, height: 14, background: '#334155', flexShrink: 0 }}/>
 
                   {/* Reading hints */}
-                  <span style={{ color: '#475569', fontSize: 11, flexShrink: 0 }}>
+                  <span style={{ color: '#e2e8f0', fontSize: 11, flexShrink: 0 }}>
                     ⬤ size = influence &nbsp;·&nbsp; click node to inspect &nbsp;·&nbsp; scroll to zoom
                   </span>
                 </div>
@@ -995,7 +995,7 @@ export default function OntologyPage() {
                       <div style={{ color: '#e2e8f0', fontSize: 12, fontWeight: 700 }}>
                         Most Influential KPIs
                       </div>
-                      <div style={{ color: '#64748b', fontSize: 10, marginTop: 2 }}>
+                      <div style={{ color: '#e2e8f0', fontSize: 10, marginTop: 2 }}>
                         KPIs other metrics depend on most — click to inspect
                       </div>
                     </div>
@@ -1017,7 +1017,7 @@ export default function OntologyPage() {
                           <div style={{ color: '#00AEEF', fontWeight: 700, fontSize: 13 }}>
                             {Math.round((n.pagerank || 0) * 100)}%
                           </div>
-                          <div style={{ color: '#475569', fontSize: 9 }}>influence</div>
+                          <div style={{ color: '#e2e8f0', fontSize: 9 }}>influence</div>
                         </div>
                       </div>
                     ))}
@@ -1028,7 +1028,7 @@ export default function OntologyPage() {
                   <div style={{ background: '#1e293b', borderRadius: 8, border: '1px solid #334155', padding: 14 }}>
                     <div style={{ marginBottom: 10 }}>
                       <div style={{ color: '#e2e8f0', fontSize: 12, fontWeight: 700 }}>Relationship Breakdown</div>
-                      <div style={{ color: '#64748b', fontSize: 10, marginTop: 2 }}>How KPIs are connected</div>
+                      <div style={{ color: '#e2e8f0', fontSize: 10, marginTop: 2 }}>How KPIs are connected</div>
                     </div>
                     {Object.entries(stats.edge_type_distribution).map(([rel, cnt]) => {
                       const rc = RELATION_COLOR[rel] || '#94a3b8'
@@ -1038,7 +1038,7 @@ export default function OntologyPage() {
                         <div key={rel} style={{ marginBottom: 8 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
                             <span style={{ fontSize: 12, color: rc, fontWeight: 600 }}>{fmtRelation(rel)}</span>
-                            <span style={{ color: '#94a3b8', fontSize: 11 }}>{cnt} links</span>
+                            <span style={{ color: '#e2e8f0', fontSize: 11 }}>{cnt} links</span>
                           </div>
                           <div style={{ height: 3, background: '#0f172a', borderRadius: 2, overflow: 'hidden' }}>
                             <div style={{ height: '100%', width: `${pct}%`, background: rc, borderRadius: 2, opacity: 0.7 }}/>
@@ -1080,7 +1080,7 @@ export default function OntologyPage() {
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center',
               padding: 40, background: '#1e293b', borderRadius: 8, gap: 12 }}>
               <Sparkles size={40} color="#94a3b8"/>
-              <p style={{ color: '#64748b' }}>
+              <p style={{ color: '#e2e8f0' }}>
                 {recs.length === 0
                   ? 'No recommendations yet — run Discovery first.'
                   : 'No recommendations of this type.'}
