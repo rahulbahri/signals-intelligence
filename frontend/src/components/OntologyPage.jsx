@@ -26,6 +26,94 @@ const fmtRelation = r => r.split('_').map(w => w[0] + w.slice(1).toLowerCase()).
 // Title-case a domain: growth → Growth
 const fmtDomain   = d => d ? d[0].toUpperCase() + d.slice(1) : d
 
+// ── Zoom + pan hook (shared by ForceGraph & ClusterGraph) ─────────────────
+function useZoomPan(svgRef, W, H) {
+  const [vp, setVp] = useState({ scale: 1, tx: 0, ty: 0 })
+  const vpRef    = useRef(vp)
+  const dragging = useRef(false)
+  const dragStart = useRef({ x: 0, y: 0, tx: 0, ty: 0 })
+
+  useEffect(() => { vpRef.current = vp }, [vp])
+
+  // Wheel zoom — must be non-passive to preventDefault
+  useEffect(() => {
+    const el = svgRef.current
+    if (!el) return
+    const handler = (e) => {
+      e.preventDefault()
+      const factor = e.deltaY > 0 ? 0.88 : 1.14
+      const { scale, tx, ty } = vpRef.current
+      const rect = el.getBoundingClientRect()
+      const mx = (e.clientX - rect.left) / rect.width  * W
+      const my = (e.clientY - rect.top)  / rect.height * H
+      const newScale = Math.max(0.15, Math.min(10, scale * factor))
+      setVp({
+        scale: newScale,
+        tx: mx - (mx - tx) * (newScale / scale),
+        ty: my - (my - ty) * (newScale / scale),
+      })
+    }
+    el.addEventListener('wheel', handler, { passive: false })
+    return () => el.removeEventListener('wheel', handler)
+  }, [svgRef, W, H])
+
+  const handlers = {
+    onMouseDown(e) {
+      if (e.target.closest('[data-node]')) return   // don't pan when clicking a node
+      dragging.current = true
+      dragStart.current = { x: e.clientX, y: e.clientY, tx: vpRef.current.tx, ty: vpRef.current.ty }
+      e.currentTarget.style.cursor = 'grabbing'
+      e.preventDefault()
+    },
+    onMouseMove(e) {
+      if (!dragging.current) return
+      const rect = svgRef.current.getBoundingClientRect()
+      setVp(v => ({
+        ...v,
+        tx: dragStart.current.tx + (e.clientX - dragStart.current.x) * W / rect.width,
+        ty: dragStart.current.ty + (e.clientY - dragStart.current.y) * H / rect.height,
+      }))
+    },
+    onMouseUp(e)    { dragging.current = false; e.currentTarget.style.cursor = 'grab' },
+    onMouseLeave(e) { dragging.current = false; e.currentTarget.style.cursor = 'grab' },
+  }
+
+  function zoomBy(factor) {
+    setVp(({ scale, tx, ty }) => {
+      const newScale = Math.max(0.15, Math.min(10, scale * factor))
+      const cx = W / 2, cy = H / 2
+      return { scale: newScale, tx: cx - (cx - tx) * (newScale / scale), ty: cy - (cy - ty) * (newScale / scale) }
+    })
+  }
+
+  return { vp, handlers, zoomBy, reset: () => setVp({ scale: 1, tx: 0, ty: 0 }) }
+}
+
+// ── Zoom controls overlay ─────────────────────────────────────────────────
+function ZoomControls({ scale, zoomBy, reset }) {
+  const btn = (label, onClick) => (
+    <button key={label} onClick={onClick}
+      title={label === '+' ? 'Zoom in' : label === '−' ? 'Zoom out' : 'Reset view'}
+      style={{ width: 28, height: 28, background: '#1e293b', border: '1px solid #475569',
+        borderRadius: 6, color: '#e2e8f0', fontSize: label === 'Reset' ? 9 : 18,
+        cursor: 'pointer', display: 'flex', alignItems: 'center',
+        justifyContent: 'center', fontWeight: 700, lineHeight: 1 }}>
+      {label}
+    </button>
+  )
+  return (
+    <div style={{ position: 'absolute', bottom: 14, right: 14,
+      display: 'flex', flexDirection: 'column', gap: 4, zIndex: 10 }}>
+      {btn('+', () => zoomBy(1.3))}
+      {btn('−', () => zoomBy(1 / 1.3))}
+      {btn('Reset', reset)}
+      <div style={{ textAlign: 'center', color: '#64748b', fontSize: 9, fontWeight: 600, marginTop: 2 }}>
+        {Math.round(scale * 100)}%
+      </div>
+    </div>
+  )
+}
+
 // ── Force-directed layout ─────────────────────────────────────────────────
 function useForceLayout(nodes, edges, width, height) {
   const posRef   = useRef({})
@@ -41,10 +129,10 @@ function useForceLayout(nodes, edges, width, height) {
       if (posRef.current[n.key]) return
       const di = domains.indexOf(n.domain)
       const angle = (di / domains.length) * Math.PI * 2 + (i * 0.3)
-      const r = Math.min(width, height) * 0.30
+      const r = Math.min(width, height) * 0.38          // wider initial spread
       posRef.current[n.key] = {
-        x: width  / 2 + r * Math.cos(angle) + (Math.random() - 0.5) * 40,
-        y: height / 2 + r * Math.sin(angle) + (Math.random() - 0.5) * 40,
+        x: width  / 2 + r * Math.cos(angle) + (Math.random() - 0.5) * 100,
+        y: height / 2 + r * Math.sin(angle) + (Math.random() - 0.5) * 100,
       }
       velRef.current[n.key] = { x: 0, y: 0 }
     })
@@ -58,10 +146,10 @@ function useForceLayout(nodes, edges, width, height) {
     })
 
     let t = 0
-    const REPULSION = 4500
-    const SPRING    = 0.04
-    const DAMPING   = 0.75
-    const REST      = 100
+    const REPULSION = 14000   // was 4500 — much stronger push between nodes
+    const SPRING    = 0.03
+    const DAMPING   = 0.70    // was 0.75
+    const REST      = 260     // was 100 — longer spring rest length
 
     function step() {
       const pos = posRef.current
@@ -95,21 +183,22 @@ function useForceLayout(nodes, edges, width, height) {
         vel[e.target].x -= fx; vel[e.target].y -= fy
       })
 
+      // Weaker centre gravity so nodes spread more freely
       keys.forEach(k => {
-        vel[k].x += (width  / 2 - pos[k].x) * 0.002
-        vel[k].y += (height / 2 - pos[k].y) * 0.002
+        vel[k].x += (width  / 2 - pos[k].x) * 0.0006
+        vel[k].y += (height / 2 - pos[k].y) * 0.0006
       })
 
       keys.forEach(k => {
         vel[k].x *= DAMPING; vel[k].y *= DAMPING
         pos[k].x += vel[k].x; pos[k].y += vel[k].y
-        pos[k].x = Math.max(20, Math.min(width - 20, pos[k].x))
-        pos[k].y = Math.max(20, Math.min(height - 20, pos[k].y))
+        pos[k].x = Math.max(40, Math.min(width - 40, pos[k].x))
+        pos[k].y = Math.max(40, Math.min(height - 40, pos[k].y))
       })
 
       t++
       if (t % 6 === 0) setTick(t)
-      if (t < 400) frameRef.current = requestAnimationFrame(step)
+      if (t < 600) frameRef.current = requestAnimationFrame(step)
     }
 
     frameRef.current = requestAnimationFrame(step)
@@ -121,8 +210,12 @@ function useForceLayout(nodes, edges, width, height) {
 
 // ── Force graph SVG ───────────────────────────────────────────────────────
 function ForceGraph({ nodes, edges, selected, onSelect }) {
-  const W = 900, H = 750
+  const W = 1800, H = 1400      // large virtual canvas so nodes have room to breathe
   const pos = useForceLayout(nodes, edges, W, H)
+
+  const svgRef = useRef(null)
+  const { vp, handlers, zoomBy, reset } = useZoomPan(svgRef, W, H)
+  const { scale, tx, ty } = vp
 
   const neighborSet = useMemo(() => {
     if (!selected) return null
@@ -137,63 +230,78 @@ function ForceGraph({ nodes, edges, selected, onSelect }) {
   if (!nodes.length) return null
 
   return (
-    <svg width="100%" height="750" viewBox={`0 0 ${W} ${H}`}
-      style={{ background: '#0f172a', borderRadius: 8, display: 'block' }}>
-      <defs>
-        {Object.entries(RELATION_COLOR).map(([rel, col]) => (
-          <marker key={rel} id={`arr-${rel}`} markerWidth="6" markerHeight="6"
-            refX="5" refY="3" orient="auto">
-            <path d="M0,0 L0,6 L6,3 z" fill={col} opacity="0.7"/>
-          </marker>
-        ))}
-      </defs>
+    <div style={{ position: 'relative' }}>
+      <svg ref={svgRef} width="100%" height="750" viewBox={`0 0 ${W} ${H}`}
+        style={{ background: '#0f172a', borderRadius: 8, display: 'block', cursor: 'grab' }}
+        {...handlers}>
+        {/* Arrow marker defs stay outside the transform group */}
+        <defs>
+          {Object.entries(RELATION_COLOR).map(([rel, col]) => (
+            <marker key={rel} id={`arr-${rel}`} markerWidth="6" markerHeight="6"
+              refX="5" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L6,3 z" fill={col} opacity="0.7"/>
+            </marker>
+          ))}
+        </defs>
 
-      {edges.map((e, i) => {
-        const pa = pos[e.source], pb = pos[e.target]
-        if (!pa || !pb) return null
-        const dimmed = neighborSet && !neighborSet.has(e.source) && !neighborSet.has(e.target)
-        const col = RELATION_COLOR[e.relation] || '#64748b'
-        return (
-          <line key={i}
-            x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}
-            stroke={col}
-            strokeWidth={Math.max(0.5, (e.strength || 0.4) * 2.5)}
-            opacity={dimmed ? 0.06 : 0.45}
-            markerEnd={`url(#arr-${e.relation})`}
-          />
-        )
-      })}
+        {/* All content inside the zoomable/pannable group */}
+        <g transform={`translate(${tx},${ty}) scale(${scale})`}>
+          {edges.map((e, i) => {
+            const pa = pos[e.source], pb = pos[e.target]
+            if (!pa || !pb) return null
+            const dimmed = neighborSet && !neighborSet.has(e.source) && !neighborSet.has(e.target)
+            const col = RELATION_COLOR[e.relation] || '#64748b'
+            return (
+              <line key={i}
+                x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}
+                stroke={col}
+                strokeWidth={Math.max(0.5, (e.strength || 0.4) * 2)}
+                opacity={dimmed ? 0.05 : 0.40}
+                markerEnd={`url(#arr-${e.relation})`}
+              />
+            )
+          })}
 
-      {nodes.map(n => {
-        const p = pos[n.key]
-        if (!p) return null
-        const dimmed = neighborSet && !neighborSet.has(n.key)
-        const r = 5 + (n.centrality || 0) * 16
-        const col = DOMAIN_COLOR[n.domain] || '#94a3b8'
-        const isSelected = selected === n.key
-        return (
-          <g key={n.key} onClick={() => onSelect(isSelected ? null : n.key)}
-            style={{ cursor: 'pointer' }} opacity={dimmed ? 0.15 : 1}>
-            {isSelected && (
-              <circle cx={p.x} cy={p.y} r={r + 6} fill="none" stroke={col} strokeWidth={2} opacity={0.5}/>
-            )}
-            <circle cx={p.x} cy={p.y} r={r} fill={col} opacity={0.85}/>
-            {(r > 8 || isSelected) && (
-              <text x={p.x} y={p.y + r + 10} textAnchor="middle"
-                fontSize="8" fill="#cbd5e1" style={{ pointerEvents: 'none' }}>
-                {n.name}
-              </text>
-            )}
-          </g>
-        )
-      })}
-    </svg>
+          {nodes.map(n => {
+            const p = pos[n.key]
+            if (!p) return null
+            const dimmed = neighborSet && !neighborSet.has(n.key)
+            const r = 6 + (n.centrality || 0) * 18
+            const col = DOMAIN_COLOR[n.domain] || '#94a3b8'
+            const isSelected = selected === n.key
+            return (
+              <g key={n.key} data-node="true"
+                onClick={() => onSelect(isSelected ? null : n.key)}
+                style={{ cursor: 'pointer' }} opacity={dimmed ? 0.12 : 1}>
+                {isSelected && (
+                  <circle cx={p.x} cy={p.y} r={r + 8} fill="none" stroke={col} strokeWidth={2} opacity={0.5}/>
+                )}
+                <circle cx={p.x} cy={p.y} r={r} fill={col} opacity={0.85}/>
+                <text x={p.x} y={p.y + r + 12} textAnchor="middle"
+                  fontSize="11" fill="#cbd5e1" style={{ pointerEvents: 'none' }}>
+                  {n.name}
+                </text>
+              </g>
+            )
+          })}
+        </g>
+      </svg>
+      <ZoomControls scale={scale} zoomBy={zoomBy} reset={reset}/>
+      <div style={{ position: 'absolute', bottom: 14, left: 14, background: '#0f172acc',
+        borderRadius: 5, padding: '3px 8px', color: '#64748b', fontSize: 10, pointerEvents: 'none' }}>
+        Scroll to zoom · Drag to pan
+      </div>
+    </div>
   )
 }
 
 // ── Cluster View ─────────────────────────────────────────────────────────
 function ClusterGraph({ nodes, edges, selected, onSelect }) {
-  const W = 900, H = 750
+  const W = 1600, H = 1200
+
+  const svgRef = useRef(null)
+  const { vp, handlers, zoomBy, reset } = useZoomPan(svgRef, W, H)
+  const { scale, tx, ty } = vp
 
   // Group nodes by domain
   const byDomain = useMemo(() => {
@@ -206,13 +314,13 @@ function ClusterGraph({ nodes, edges, selected, onSelect }) {
     return map
   }, [nodes])
 
-  // Lay out domain cluster centres in a grid
+  // Lay out domain cluster centres — wider grid on larger canvas
   const clusterPos = useMemo(() => {
     const domains = Object.keys(byDomain)
     const COLS = 3
     const xStep = W / COLS
-    const yStart = 100
-    const yStep = 220
+    const yStart = 160
+    const yStep = 320
     const pos = {}
     domains.forEach((d, i) => {
       pos[d] = {
@@ -223,13 +331,13 @@ function ClusterGraph({ nodes, edges, selected, onSelect }) {
     return pos
   }, [byDomain])
 
-  // Compute per-node positions — arranged in a small circle around cluster centre
+  // Compute per-node positions — circle around cluster centre with more radius
   const nodePos = useMemo(() => {
     const pos = {}
     Object.entries(byDomain).forEach(([d, dnodes]) => {
       const centre = clusterPos[d]
       if (!centre) return
-      const R = Math.min(70, 28 + dnodes.length * 7)
+      const R = Math.min(110, 44 + dnodes.length * 10)
       dnodes.forEach((n, i) => {
         const angle = (i / Math.max(dnodes.length, 1)) * Math.PI * 2 - Math.PI / 2
         pos[n.key] = {
@@ -252,74 +360,85 @@ function ClusterGraph({ nodes, edges, selected, onSelect }) {
   }, [selected, edges])
 
   return (
-    <svg width="100%" height="750" viewBox={`0 0 ${W} ${H}`}
-      style={{ background: '#0f172a', borderRadius: 8, display: 'block' }}>
-      <defs>
-        {Object.entries(RELATION_COLOR).map(([rel, col]) => (
-          <marker key={rel} id={`cl-arr-${rel}`} markerWidth="6" markerHeight="6"
-            refX="5" refY="3" orient="auto">
-            <path d="M0,0 L0,6 L6,3 z" fill={col} opacity="0.7"/>
-          </marker>
-        ))}
-      </defs>
+    <div style={{ position: 'relative' }}>
+      <svg ref={svgRef} width="100%" height="750" viewBox={`0 0 ${W} ${H}`}
+        style={{ background: '#0f172a', borderRadius: 8, display: 'block', cursor: 'grab' }}
+        {...handlers}>
+        <defs>
+          {Object.entries(RELATION_COLOR).map(([rel, col]) => (
+            <marker key={rel} id={`cl-arr-${rel}`} markerWidth="6" markerHeight="6"
+              refX="5" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L6,3 z" fill={col} opacity="0.7"/>
+            </marker>
+          ))}
+        </defs>
 
-      {/* Domain bubble backgrounds */}
-      {Object.entries(clusterPos).map(([d, pos]) => {
-        const dnodes = byDomain[d] || []
-        const R = Math.min(85, 40 + dnodes.length * 8)
-        const col = DOMAIN_COLOR[d] || '#94a3b8'
-        return (
-          <g key={d}>
-            <circle cx={pos.x} cy={pos.y} r={R + 18}
-              fill={col} fillOpacity={0.05}
-              stroke={col} strokeOpacity={0.20} strokeWidth={1.5} strokeDasharray="5 4"/>
-            <text x={pos.x} y={pos.y - R - 10}
-              textAnchor="middle" fontSize="11" fontWeight="700"
-              fill={col} opacity={0.9}
-              style={{ letterSpacing: '0.07em', textTransform: 'uppercase', pointerEvents: 'none' }}>
-              {fmtDomain(d)}
-            </text>
-          </g>
-        )
-      })}
+        <g transform={`translate(${tx},${ty}) scale(${scale})`}>
+          {/* Domain bubble backgrounds */}
+          {Object.entries(clusterPos).map(([d, pos]) => {
+            const dnodes = byDomain[d] || []
+            const R = Math.min(130, 60 + dnodes.length * 11)
+            const col = DOMAIN_COLOR[d] || '#94a3b8'
+            return (
+              <g key={d}>
+                <circle cx={pos.x} cy={pos.y} r={R + 28}
+                  fill={col} fillOpacity={0.05}
+                  stroke={col} strokeOpacity={0.20} strokeWidth={1.5} strokeDasharray="6 5"/>
+                <text x={pos.x} y={pos.y - R - 14}
+                  textAnchor="middle" fontSize="14" fontWeight="700"
+                  fill={col} opacity={0.9}
+                  style={{ letterSpacing: '0.07em', textTransform: 'uppercase', pointerEvents: 'none' }}>
+                  {fmtDomain(d)}
+                </text>
+              </g>
+            )
+          })}
 
-      {/* Edges */}
-      {edges.map((e, i) => {
-        const pa = nodePos[e.source], pb = nodePos[e.target]
-        if (!pa || !pb) return null
-        const dimmed = neighborSet && !neighborSet.has(e.source) && !neighborSet.has(e.target)
-        const col = RELATION_COLOR[e.relation] || '#64748b'
-        return (
-          <line key={i} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}
-            stroke={col} strokeWidth={1}
-            opacity={dimmed ? 0.04 : 0.30}
-            markerEnd={`url(#cl-arr-${e.relation})`}/>
-        )
-      })}
+          {/* Edges */}
+          {edges.map((e, i) => {
+            const pa = nodePos[e.source], pb = nodePos[e.target]
+            if (!pa || !pb) return null
+            const dimmed = neighborSet && !neighborSet.has(e.source) && !neighborSet.has(e.target)
+            const col = RELATION_COLOR[e.relation] || '#64748b'
+            return (
+              <line key={i} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}
+                stroke={col} strokeWidth={1}
+                opacity={dimmed ? 0.04 : 0.28}
+                markerEnd={`url(#cl-arr-${e.relation})`}/>
+            )
+          })}
 
-      {/* Nodes */}
-      {nodes.map(n => {
-        const p = nodePos[n.key]
-        if (!p) return null
-        const dimmed = neighborSet && !neighborSet.has(n.key)
-        const r = 4 + (n.centrality || 0) * 14
-        const col = DOMAIN_COLOR[n.domain] || '#94a3b8'
-        const isSel = selected === n.key
-        return (
-          <g key={n.key} onClick={() => onSelect(isSel ? null : n.key)}
-            style={{ cursor: 'pointer' }} opacity={dimmed ? 0.15 : 1}>
-            {isSel && (
-              <circle cx={p.x} cy={p.y} r={r + 5} fill="none" stroke={col} strokeWidth={2} opacity={0.5}/>
-            )}
-            <circle cx={p.x} cy={p.y} r={r} fill={col} opacity={0.88}/>
-            <text x={p.x} y={p.y + r + 9} textAnchor="middle"
-              fontSize="8" fill="#cbd5e1" style={{ pointerEvents: 'none' }}>
-              {n.name}
-            </text>
-          </g>
-        )
-      })}
-    </svg>
+          {/* Nodes */}
+          {nodes.map(n => {
+            const p = nodePos[n.key]
+            if (!p) return null
+            const dimmed = neighborSet && !neighborSet.has(n.key)
+            const r = 5 + (n.centrality || 0) * 16
+            const col = DOMAIN_COLOR[n.domain] || '#94a3b8'
+            const isSel = selected === n.key
+            return (
+              <g key={n.key} data-node="true"
+                onClick={() => onSelect(isSel ? null : n.key)}
+                style={{ cursor: 'pointer' }} opacity={dimmed ? 0.12 : 1}>
+                {isSel && (
+                  <circle cx={p.x} cy={p.y} r={r + 7} fill="none" stroke={col} strokeWidth={2} opacity={0.5}/>
+                )}
+                <circle cx={p.x} cy={p.y} r={r} fill={col} opacity={0.88}/>
+                <text x={p.x} y={p.y + r + 12} textAnchor="middle"
+                  fontSize="11" fill="#cbd5e1" style={{ pointerEvents: 'none' }}>
+                  {n.name}
+                </text>
+              </g>
+            )
+          })}
+        </g>
+      </svg>
+      <ZoomControls scale={scale} zoomBy={zoomBy} reset={reset}/>
+      <div style={{ position: 'absolute', bottom: 14, left: 14, background: '#0f172acc',
+        borderRadius: 5, padding: '3px 8px', color: '#64748b', fontSize: 10, pointerEvents: 'none' }}>
+        Scroll to zoom · Drag to pan
+      </div>
+    </div>
   )
 }
 
