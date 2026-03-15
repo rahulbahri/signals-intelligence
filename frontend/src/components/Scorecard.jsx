@@ -326,9 +326,86 @@ function Section({ status, kpis, onKpiClick }) {
   )
 }
 
+// ─── Board View VC Lens ───────────────────────────────────────────────────────
+const BOARD_KPIS = ['revenue_growth', 'arr_growth', 'gross_margin', 'burn_multiple', 'nrr']
+
+function BoardKPICard({ kpi, onKpiClick }) {
+  if (!kpi) return null
+  const statusColor = {
+    green:  { border: 'border-emerald-400', bg: 'bg-emerald-50/30', text: 'text-emerald-700', badge: 'badge-green' },
+    yellow: { border: 'border-amber-400',   bg: 'bg-amber-50/30',   text: 'text-amber-700',   badge: 'badge-yellow' },
+    red:    { border: 'border-red-400',     bg: 'bg-red-50/30',     text: 'text-red-700',     badge: 'badge-red' },
+    grey:   { border: 'border-slate-200',   bg: '',                 text: 'text-slate-500',   badge: 'badge-grey' },
+  }[kpi.fy_status] || { border: 'border-slate-200', bg: '', text: 'text-slate-500', badge: 'badge-grey' }
+
+  const vs = vsTarget(kpi.avg, kpi.target, kpi.direction)
+  const sortedMonths = [...(kpi.monthly ?? [])].sort((a, b) => a.period.localeCompare(b.period))
+  const lastVal = sortedMonths.at(-1)?.value
+  const prevVal = sortedMonths.at(-2)?.value
+  const momDelta = (lastVal != null && prevVal != null) ? lastVal - prevVal : null
+  const isGoodMom = kpi.direction === 'lower' ? momDelta <= 0 : momDelta >= 0
+
+  return (
+    <div
+      className={`flex-1 min-w-[180px] card border-2 ${statusColor.border} ${statusColor.bg} p-5 cursor-pointer
+                  hover:shadow-lg hover:scale-[1.02] transition-all group`}
+      onClick={() => onKpiClick?.(kpi.key)}>
+      <div className="flex items-start justify-between mb-2">
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{kpi.name}</p>
+        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold flex-shrink-0 ${statusColor.badge}`}>
+          {kpi.fy_status?.toUpperCase()}
+        </span>
+      </div>
+      <div className="text-3xl font-bold text-slate-900 mb-1">{fmt(kpi.avg, kpi.unit)}</div>
+      <div className="flex items-center justify-between text-xs mb-3">
+        <span className="text-slate-400">Target: <span className="text-slate-600 font-medium">{fmt(kpi.target, kpi.unit)}</span></span>
+        {vs && (
+          <span className={`font-bold ${vs.good ? 'text-emerald-600' : 'text-red-500'}`}>
+            {vs.good ? '▲' : '▼'} {Math.abs(kpi.avg - kpi.target).toFixed(1)}{kpi.unit === 'pct' ? 'pp' : ''}
+          </span>
+        )}
+      </div>
+      {momDelta != null && (
+        <div className={`text-[11px] font-medium mb-2 ${isGoodMom ? 'text-emerald-600' : 'text-red-500'}`}>
+          {momDelta > 0 ? '+' : ''}{momDelta.toFixed(1)}{kpi.unit === 'pct' ? 'pp' : ''} MoM
+        </div>
+      )}
+      {kpi.monthly?.length > 1 && (
+        <SparkBar data={kpi.monthly} target={kpi.target} direction={kpi.direction}/>
+      )}
+    </div>
+  )
+}
+
 // ─── Scorecard ───────────────────────────────────────────────────────────────
-export default function Scorecard({ fingerprint, onKpiClick }) {
+export default function Scorecard({ fingerprint, onKpiClick, boardView }) {
   if (!fingerprint?.length) return null
+
+  if (boardView) {
+    const boardKpis = BOARD_KPIS.map(key => fingerprint.find(k => k.key === key)).filter(Boolean)
+    const groups = { red: [], yellow: [], green: [], grey: [] }
+    boardKpis.forEach(kpi => groups[kpi.fy_status || 'grey'].push(kpi))
+    return (
+      <div>
+        <div className="mb-4 px-1">
+          <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">
+            VC / Board Lens — 5 Headline KPIs
+          </p>
+          <p className="text-xs text-slate-400 mt-0.5">Revenue Growth · ARR Growth · Gross Margin · Burn Multiple · NRR</p>
+        </div>
+        <div className="flex flex-wrap gap-4 mb-6">
+          {boardKpis.map(kpi => (
+            <BoardKPICard key={kpi.key} kpi={kpi} onKpiClick={onKpiClick}/>
+          ))}
+        </div>
+        <PriorityActionsPanel
+          red={groups.red}
+          yellow={groups.yellow}
+          onKpiClick={onKpiClick}
+        />
+      </div>
+    )
+  }
 
   const groups = { red: [], yellow: [], green: [], grey: [] }
   fingerprint.forEach(kpi => groups[kpi.fy_status || 'grey'].push(kpi))

@@ -1,6 +1,26 @@
 import { useState, useRef } from 'react'
 import axios from 'axios'
-import { Upload, CheckCircle, AlertCircle, FileText, Trash2, GitBranch, Activity, AlertTriangle } from 'lucide-react'
+import { Upload, CheckCircle, AlertCircle, FileText, Trash2, GitBranch, Activity, AlertTriangle, Download } from 'lucide-react'
+
+const ACTUALS_TEMPLATE = `date,revenue,cogs,opex,ar,customers,churn,is_recurring,sm_allocated,arr
+2025-01-15,25000,9500,7200,28000,1,0,1,3200,18000
+2025-01-22,18000,7000,5400,20000,1,0,0,2400,0
+2025-02-10,32000,12000,9100,35000,1,0,1,4000,24000
+`
+
+const PROJECTION_TEMPLATE = `date,revenue,cogs,opex,ar,customers,churn,is_recurring,sm_allocated,arr
+2025-01-15,28000,10000,7500,30000,1,0,1,3400,20000
+2025-01-22,20000,7500,5600,22000,1,0,0,2600,0
+2025-02-10,36000,13000,9500,38000,1,0,1,4200,26000
+`
+
+function downloadTemplate(content, filename) {
+  const blob = new Blob([content], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
+}
 
 export default function CSVUpload({ onUploaded }) {
 
@@ -70,9 +90,17 @@ export default function CSVUpload({ onUploaded }) {
       {/* ══ Section 1: Actuals Data ═══════════════════════════════════════ */}
       <div className="space-y-5">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="w-1 h-5 bg-[#0055A4] rounded-full"/>
-            <h2 className="text-slate-800 font-semibold text-base">Actuals Data</h2>
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <span className="w-1 h-5 bg-[#0055A4] rounded-full"/>
+              <h2 className="text-slate-800 font-semibold text-base">Actuals Data</h2>
+            </div>
+            <button
+              onClick={() => downloadTemplate(ACTUALS_TEMPLATE, 'actuals_template.csv')}
+              className="flex items-center gap-1.5 text-xs text-[#0055A4] border border-[#0055A4]/25
+                         bg-[#0055A4]/5 hover:bg-[#0055A4]/15 px-3 py-1.5 rounded-lg transition-all">
+              <Download size={12}/> Download Template
+            </button>
           </div>
           <p className="text-slate-500 text-xs pl-3">
             Upload a CSV of raw transactions to compute all 18 KPIs. Column names are auto-detected.
@@ -215,12 +243,20 @@ export default function CSVUpload({ onUploaded }) {
       {/* ══ Section 2: Projection Data ════════════════════════════════════ */}
       <div className="space-y-5">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="w-1 h-5 bg-blue-400 rounded-full"/>
-            <h2 className="text-slate-800 font-semibold text-base">Projection Data</h2>
-            <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
-              replaces existing
-            </span>
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <span className="w-1 h-5 bg-blue-400 rounded-full"/>
+              <h2 className="text-slate-800 font-semibold text-base">Projection Data</h2>
+              <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                replaces existing
+              </span>
+            </div>
+            <button
+              onClick={() => downloadTemplate(PROJECTION_TEMPLATE, 'projection_template.csv')}
+              className="flex items-center gap-1.5 text-xs text-blue-600 border border-blue-200
+                         bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-all">
+              <Download size={12}/> Download Template
+            </button>
           </div>
           <p className="text-slate-500 text-xs pl-3">
             Upload a 12-month projection CSV (same format as actuals) to unlock Bridge Analysis — gap waterfall charts, root cause diagnostics, and corrective action playbooks.

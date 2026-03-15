@@ -507,6 +507,54 @@ export default function OntologyPage() {
         </div>
       )}
 
+      {/* Top 3 Leverage Points */}
+      {graph.nodes.length > 0 && (() => {
+        const top3 = [...graph.nodes]
+          .filter(n => n.degree_centrality != null)
+          .sort((a, b) => (b.degree_centrality ?? 0) - (a.degree_centrality ?? 0))
+          .slice(0, 3)
+        if (!top3.length) return null
+        const ACTIONS = {
+          revenue_growth: 'Accelerate pipeline conversion and reduce churn to compound revenue momentum',
+          arr_growth: 'Focus expansion ARR via upsell programmes in top-tier accounts',
+          gross_margin: 'Renegotiate COGS with key vendors; optimise product tier mix',
+          burn_multiple: 'Review headcount efficiency; defer non-critical spend',
+          nrr: 'Deploy retention and expansion playbooks for at-risk cohorts',
+          churn_rate: 'Prioritise at-risk accounts; improve onboarding and QBR cadence',
+          operating_margin: 'Identify opex above budget across G&A and R&D',
+          sales_efficiency: 'Increase AE productivity; focus on highest-yield segments',
+          cac_payback: 'Optimise marketing channel mix for lower-CAC acquisition',
+          dso: 'Tighten collection cycles; review payment terms with top accounts',
+        }
+        return (
+          <div className="card p-4 border-l-4 border-l-[#0055A4]">
+            <div className="flex items-center gap-2 mb-3">
+              <Zap size={14} className="text-[#0055A4]"/>
+              <span className="text-sm font-bold text-slate-800">Top 3 Leverage Points</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 font-medium">
+                Highest-impact nodes this period
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {top3.map((node, i) => (
+                <div key={node.key} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">#{i+1} Leverage</span>
+                    <span className="text-[10px] font-mono text-[#0055A4]">
+                      {((node.degree_centrality ?? 0) * 100).toFixed(0)}% centrality
+                    </span>
+                  </div>
+                  <p className="text-xs font-semibold text-slate-800 mb-1">{node.name}</p>
+                  <p className="text-[10px] text-slate-500 leading-snug">
+                    {ACTIONS[node.key] ?? 'Review this KPI and identify downstream improvement levers'}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Tabs + Run Discovery */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', gap: 4 }}>

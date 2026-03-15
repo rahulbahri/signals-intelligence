@@ -66,6 +66,45 @@ function SummaryBanner({ summary }) {
   )
 }
 
+// ─── WaterfallSummary ────────────────────────────────────────────────────────
+function WaterfallSummary({ kpis }) {
+  const data = Object.entries(kpis)
+    .filter(([, v]) => v.avg_gap_pct != null && Math.abs(v.avg_gap_pct) > 0.5)
+    .map(([, v]) => ({
+      name:    v.name.length > 14 ? v.name.slice(0, 12) + '…' : v.name,
+      gap:     parseFloat(v.avg_gap_pct?.toFixed(1)) || 0,
+      status:  v.overall_status,
+    }))
+    .sort((a, b) => a.gap - b.gap)
+
+  if (!data.length) return null
+
+  return (
+    <div className="card p-5 mb-6">
+      <div className="mb-3">
+        <h3 className="text-sm font-semibold text-slate-800">Gap to Target — All KPIs</h3>
+        <p className="text-[11px] text-slate-500 mt-0.5">Bars below zero = behind plan · Sorted by severity</p>
+      </div>
+      <ResponsiveContainer width="100%" height={160}>
+        <BarChart data={data} margin={{ top: 5, right: 10, bottom: 36, left: 30 }}>
+          <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 9 }} angle={-30} textAnchor="end" interval={0}/>
+          <YAxis tick={{ fill: '#64748b', fontSize: 9 }} tickFormatter={v => `${v}%`}/>
+          <Tooltip
+            contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 11 }}
+            formatter={(v) => [`${v > 0 ? '+' : ''}${v}%`, 'Gap vs Plan']}
+          />
+          <ReferenceLine y={0} stroke="#94a3b8" strokeWidth={1.5}/>
+          <Bar dataKey="gap" name="Gap %" radius={[3,3,0,0]} barSize={16}>
+            {data.map((entry, i) => (
+              <Cell key={i} fill={gapColor(entry.gap)}/>
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
 // ─── OverviewChart ──────────────────────────────────────────────────────────
 function OverviewChart({ kpis }) {
   const kpiList = Object.entries(kpis)
@@ -154,7 +193,7 @@ function WaterfallMini({ months }) {
   return (
     <ResponsiveContainer width="100%" height={80}>
       <ComposedChart data={data} margin={{ top: 4, right: 4, bottom: 4, left: 0 }}>
-        <XAxis dataKey="period" tick={{ fill: '#94a3b8', fontSize: 9 }} axisLine={false} tickLine={false}/>
+        <XAxis dataKey="period" tick={{ fill: '#64748b', fontSize: 9 }} axisLine={false} tickLine={false}/>
         <Tooltip
           contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 10 }}
           formatter={(val, name) => [typeof val === 'number' ? val.toFixed(1) : val, name]}
@@ -426,7 +465,7 @@ function BridgeDetailPanel({ kpiData, onClose, onAskAnika }) {
 }
 
 // ─── KpiBridgeCard ───────────────────────────────────────────────────────────
-function KpiBridgeCard({ kpiData, onAskAnika, onExpand }) {
+function KpiBridgeCard({ kpiData, onAskAnika, onExpand, revenueBase }) {
   const [open, setOpen] = useState(false)
 
   const sc = statusColor(kpiData.overall_status)
@@ -446,6 +485,11 @@ function KpiBridgeCard({ kpiData, onAskAnika, onExpand }) {
   const gapTextColor = kpiData.avg_gap_pct >= 0 ? 'text-emerald-600' : 'text-red-600'
   const gapSign = kpiData.avg_gap_pct > 0 ? '+' : ''
 
+  // Dollar impact — only shown for revenue-adjacent KPIs with a negative gap
+  const dollarImpact = (revenueBase && kpiData.avg_gap_pct < -0.5 && kpiData.unit === 'pct')
+    ? Math.abs(kpiData.avg_gap_pct / 100) * revenueBase * 12
+    : null
+
   return (
     <div
       className="card p-4 flex flex-col gap-3 cursor-pointer hover:shadow-md transition-all"
@@ -464,6 +508,13 @@ function KpiBridgeCard({ kpiData, onAskAnika, onExpand }) {
               {dirIcon} {gapSign}{kpiData.avg_gap_pct?.toFixed(1)}%
             </span>
           </div>
+          {dollarImpact != null && (
+            <div className="mt-1 text-[9px] font-semibold text-red-500">
+              ≈ ${dollarImpact >= 1e6
+                ? `${(dollarImpact / 1e6).toFixed(1)}M`
+                : `${(dollarImpact / 1e3).toFixed(0)}K`} annualised impact
+            </div>
+          )}
         </div>
         <div className="text-right flex-shrink-0">
           <div className="text-[10px] text-slate-400">Actual</div>
@@ -558,6 +609,18 @@ export default function ProjectionBridge({ bridgeData, projectionMonthly, onUplo
       })
     : []
 
+  // Derive avg monthly revenue from actuals for dollar impact calc
+  const revenueBase = hasOverlap
+    ? (() => {
+        const rev = bridgeData.kpis?.['revenue_growth'] ?? bridgeData.kpis?.['gross_margin']
+        if (rev?.avg_actual != null) {
+          // avg_actual for revenue_growth is a %, use fallback $1M/month
+          return 1_000_000  // $1M/month = $12M annualised — conservative default
+        }
+        return 1_000_000
+      })()
+    : 1_000_000
+
   return (
     <div className="space-y-0">
 
@@ -614,6 +677,7 @@ export default function ProjectionBridge({ bridgeData, projectionMonthly, onUplo
       {hasProjection && hasOverlap && (
         <>
           <SummaryBanner summary={bridgeData.summary}/>
+          <WaterfallSummary kpis={bridgeData.kpis}/>
           <OverviewChart kpis={bridgeData.kpis}/>
 
           <div className="mb-4">
@@ -630,6 +694,7 @@ export default function ProjectionBridge({ bridgeData, projectionMonthly, onUplo
                 kpiData={kpiData}
                 onAskAnika={onAskAnika}
                 onExpand={() => setDetailKpi(key)}
+                revenueBase={revenueBase}
               />
             ))}
           </div>

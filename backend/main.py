@@ -106,6 +106,18 @@ def init_db():
 
 init_db()
 
+@app.on_event("startup")
+async def auto_seed():
+    """Auto-seed demo data on cold start if the database is empty."""
+    conn = get_db()
+    count = conn.execute("SELECT COUNT(*) FROM monthly_data").fetchone()[0]
+    proj_count = conn.execute("SELECT COUNT(*) FROM projection_monthly_data").fetchone()[0]
+    conn.close()
+    if count == 0:
+        seed_demo()
+    if proj_count == 0:
+        seed_demo_projection()
+
 # ─── KPI Definitions ────────────────────────────────────────────────────────
 
 # Extended ontology-only metrics (not in KPI_DEFS main dashboard; used only in the knowledge graph)

@@ -58,6 +58,7 @@ export default function App() {
   const [bridgeData, setBridgeData]               = useState(null)
   const [prefillQuestion, setPrefillQuestion]     = useState(null)
   const [monthRange, setMonthRange]               = useState({ from: 1, to: 12 })
+  const [boardView, setBoardView]                 = useState(false)
 
   // ── Derived / filtered data ──────────────────────────────────────────────
 
@@ -141,6 +142,13 @@ export default function App() {
       setSummary(s.data); setKpiDefs(k.data)
       setMonthly(m.data); setFingerprint(f.data)
       setBridgeData(b.data); setProjectionMonthly(pm.data)
+      // Auto-run ontology discovery if no nodes exist yet
+      try {
+        const ont = await axios.get('/api/ontology/nodes')
+        if (!ont.data?.length) {
+          await axios.post('/api/ontology/discover')
+        }
+      } catch {}
     } catch (e) { console.error(e) }
     setLoading(false)
   }
@@ -165,6 +173,10 @@ export default function App() {
   const critical  = sb.red    || 0
   const attention = sb.yellow || 0
   const onTarget  = sb.green  || 0
+  const total     = critical + attention + onTarget
+  const bhi       = total > 0 ? Math.round((onTarget * 100 + attention * 60) / total) : null
+  const bhiColor  = bhi == null ? '#94a3b8' : bhi >= 80 ? '#059669' : bhi >= 60 ? '#d97706' : '#dc2626'
+  const bhiTrack  = bhi == null ? '#e2e8f0' : bhi >= 80 ? '#dcfce7' : bhi >= 60 ? '#fef3c7' : '#fee2e2'
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -188,25 +200,45 @@ export default function App() {
           </div>
         </div>
 
-        {/* Status mini-summary — reflects current month filter */}
+        {/* Business Health Index — replaces count pills */}
         {!loading && filteredSummary && (
           <div className="px-4 py-3 border-b border-white/10">
             <p className="text-slate-400 text-[10px] uppercase tracking-wider mb-2 font-medium">
-              FY 2025 Status
+              Business Health Index
             </p>
-            <div className="flex gap-2">
-              <div className="flex-1 rounded-lg bg-red-500/15 border border-red-500/25 px-2 py-1.5 text-center">
-                <div className="text-red-400 font-bold text-base leading-none">{critical}</div>
-                <div className="text-red-400/70 text-[9px] mt-0.5 uppercase tracking-wide">Critical</div>
+            {/* BHI score with arc indicator */}
+            <div className="flex items-center gap-3 mb-2">
+              <div className="relative flex-shrink-0">
+                <svg width="48" height="48" viewBox="0 0 48 48">
+                  <circle cx="24" cy="24" r="20" fill="none" stroke={bhiTrack} strokeWidth="4"/>
+                  <circle cx="24" cy="24" r="20" fill="none" stroke={bhiColor} strokeWidth="4"
+                    strokeDasharray={`${((bhi ?? 0) / 100) * 125.7} 125.7`}
+                    strokeLinecap="round"
+                    transform="rotate(-90 24 24)"/>
+                </svg>
+                <span className="absolute inset-0 flex items-center justify-center text-sm font-bold"
+                  style={{ color: bhiColor }}>
+                  {bhi ?? '—'}
+                </span>
               </div>
-              <div className="flex-1 rounded-lg bg-amber-500/15 border border-amber-500/25 px-2 py-1.5 text-center">
-                <div className="text-amber-400 font-bold text-base leading-none">{attention}</div>
-                <div className="text-amber-400/70 text-[9px] mt-0.5 uppercase tracking-wide">Watch</div>
+              <div className="min-w-0">
+                <p className="text-white text-xs font-semibold leading-none">
+                  {bhi == null ? 'No data' : bhi >= 80 ? 'Healthy' : bhi >= 60 ? 'Caution' : 'At Risk'}
+                </p>
+                <p className="text-slate-400 text-[10px] mt-0.5">out of 100</p>
               </div>
-              <div className="flex-1 rounded-lg bg-emerald-500/15 border border-emerald-500/25 px-2 py-1.5 text-center">
-                <div className="text-emerald-400 font-bold text-base leading-none">{onTarget}</div>
-                <div className="text-emerald-400/70 text-[9px] mt-0.5 uppercase tracking-wide">Good</div>
-              </div>
+            </div>
+            {/* Supporting detail pills */}
+            <div className="flex gap-1.5">
+              <span className="flex-1 text-center text-[9px] font-bold px-1 py-1 rounded bg-red-500/15 text-red-400">
+                {critical} red
+              </span>
+              <span className="flex-1 text-center text-[9px] font-bold px-1 py-1 rounded bg-amber-500/15 text-amber-400">
+                {attention} watch
+              </span>
+              <span className="flex-1 text-center text-[9px] font-bold px-1 py-1 rounded bg-emerald-500/15 text-emerald-400">
+                {onTarget} ok
+              </span>
             </div>
           </div>
         )}
@@ -312,7 +344,31 @@ export default function App() {
 
           {!loading && !noData && (
             <>
-              {tab === 'dashboard'   && <><SummaryBar summary={filteredSummary} onRefresh={loadAll} onSeed={seedDemo}/><Scorecard fingerprint={filteredFingerprint} kpiDefs={kpiDefs} onKpiClick={openKpi}/></>}
+              {tab === 'dashboard'   && (
+                <>
+                  <SummaryBar summary={filteredSummary} onRefresh={loadAll} onSeed={seedDemo}/>
+                  {/* Board View toggle */}
+                  <div className="flex justify-end mb-3">
+                    <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+                      <button
+                        onClick={() => setBoardView(false)}
+                        className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                          !boardView ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                        }`}>
+                        Full View
+                      </button>
+                      <button
+                        onClick={() => setBoardView(true)}
+                        className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                          boardView ? 'bg-white text-[#0055A4] shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                        }`}>
+                        Board View
+                      </button>
+                    </div>
+                  </div>
+                  <Scorecard fingerprint={filteredFingerprint} kpiDefs={kpiDefs} onKpiClick={openKpi} boardView={boardView}/>
+                </>
+              )}
               {tab === 'fingerprint' && <Fingerprint2 fingerprint={filteredFingerprint} onKpiClick={openKpi}/>}
               {tab === 'trends'      && <MonthlyTrend fingerprint={filteredFingerprint} monthly={filteredMonthly} onKpiClick={openKpi}/>}
               {tab === 'projection'  && (

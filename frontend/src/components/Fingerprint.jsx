@@ -20,7 +20,9 @@ function fmt(val, unit) {
 function vsTarget(val, target, direction) {
   if (!target) return 100
   const pct = (val / target) * 100
-  return direction === 'higher' ? Math.min(pct, 135) : Math.max(200 - pct, 0)
+  if (direction === 'higher') return Math.min(pct, 135)
+  // lower-is-better: on-target = 100, over by 20% → 80; floor at 30 so polygon stays visible
+  return Math.max(200 - pct, 30)
 }
 
 function cellBg(s) {
@@ -41,6 +43,17 @@ function cellStatus(val, target, direction) {
   const pct = val / target
   if (direction === 'higher') return pct >= 0.98 ? 'green' : pct >= 0.90 ? 'yellow' : 'red'
   return pct <= 1.02 ? 'green' : pct <= 1.10 ? 'yellow' : 'red'
+}
+
+function redStreak(kpi) {
+  const byMonth = {}
+  kpi.monthly.forEach(m => { byMonth[parseInt(m.period.split('-')[1], 10)] = m.value })
+  let streak = 0
+  for (let mo = 12; mo >= 1; mo--) {
+    if (cellStatus(byMonth[mo], kpi.target, kpi.direction) === 'red') streak++
+    else break
+  }
+  return streak
 }
 
 export default function Fingerprint({ fingerprint, onKpiClick }) {
@@ -101,13 +114,20 @@ export default function Fingerprint({ fingerprint, onKpiClick }) {
             {heat.map((kpi, ri) => {
               const byMonth = {}
               kpi.monthly.forEach(m => { byMonth[parseInt(m.period.split('-')[1], 10)] = m.value })
+              const streak = redStreak(kpi)
               return (
                 <tr key={kpi.key}
                   onClick={() => onKpiClick?.(kpi.key)}
                   className={`border-t border-slate-100 cursor-pointer hover:bg-blue-50/40 transition-colors group ${ri % 2 === 0 ? '' : 'bg-slate-50/40'}`}>
                   <td className="py-2 pr-2 pl-2 text-slate-700 font-medium whitespace-nowrap">
-                    <span className="flex items-center gap-1">
+                    <span className="flex items-center gap-1.5">
                       {kpi.name}
+                      {streak >= 2 && (
+                        <span className="flex items-center gap-0.5 text-[9px] font-bold text-red-500 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                          {streak >= 3 && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse flex-shrink-0"/>}
+                          {streak}mo
+                        </span>
+                      )}
                       <ChevronRight size={11} className="text-slate-300 group-hover:text-[#0055A4] transition-colors flex-shrink-0"/>
                     </span>
                   </td>
