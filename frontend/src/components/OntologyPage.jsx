@@ -451,42 +451,70 @@ function NodeInspector({ nodeKey, nodes, edges, onClose }) {
   if (!node) return null
   const outgoing = edges.filter(e => e.source === nodeKey)
   const incoming = edges.filter(e => e.target === nodeKey)
-  const col = DOMAIN_COLOR[node.domain] || '#94a3b8'
+  const col      = DOMAIN_COLOR[node.domain] || '#94a3b8'
+  const centrality = node.centrality || 0
+  const totalConn  = outgoing.length + incoming.length
+
+  // Plain-English influence level
+  const influence = centrality >= 0.60
+    ? { label: 'High-leverage',    desc: 'Changes here cascade widely across multiple KPIs', color: '#ef4444' }
+    : centrality >= 0.35
+    ? { label: 'Moderate influence', desc: 'Key driver within its domain cluster',              color: '#f59e0b' }
+    : { label: 'Focused metric',   desc: 'Targeted, more contained impact',                   color: '#10b981' }
 
   return (
     <div style={{ background: '#1e293b', borderRadius: 8, border: '1px solid #334155',
       padding: 16, width: 260, flexShrink: 0 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-        <span style={{ fontWeight: 600, color: col, fontSize: 13 }}>{node.name}</span>
-        <button onClick={onClose} style={{ color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer' }}>
+
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+        <div>
+          <div style={{ fontWeight: 700, color: col, fontSize: 14, lineHeight: 1.2 }}>{node.name}</div>
+          <div style={{ color: '#64748b', fontSize: 11, marginTop: 2 }}>{fmtDomain(node.domain)} domain</div>
+        </div>
+        <button onClick={onClose} style={{ color: '#64748b', background: 'none', border: 'none', cursor: 'pointer', padding: 2, marginLeft: 8, flexShrink: 0 }}>
           <X size={14}/>
         </button>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+
+      {/* Influence banner */}
+      <div style={{ background: influence.color + '18', border: `1px solid ${influence.color}44`,
+        borderRadius: 6, padding: '7px 10px', marginBottom: 12 }}>
+        <div style={{ color: influence.color, fontSize: 11, fontWeight: 700 }}>{influence.label}</div>
+        <div style={{ color: '#94a3b8', fontSize: 10, marginTop: 2, lineHeight: 1.4 }}>{influence.desc}</div>
+      </div>
+
+      {/* Key stats — 3 meaningful metrics */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 14 }}>
         {[
-          ['Domain',      fmtDomain(node.domain)],
-          ['Centrality',  (node.centrality * 100).toFixed(0) + '%'],
-          ['PageRank',    (node.pagerank   * 100).toFixed(0) + '%'],
-          ['Degree',      outgoing.length + incoming.length],
-        ].map(([label, val]) => (
-          <div key={label} style={{ background: '#0f172a', borderRadius: 6, padding: '6px 8px' }}>
-            <div style={{ color: '#94a3b8', fontSize: 10 }}>{label}</div>
-            <div style={{ color: '#f1f5f9', fontWeight: 600, fontSize: 13 }}>{val}</div>
+          { label: 'Connections',   val: totalConn,                              tip: 'Total direct links' },
+          { label: 'Drives',        val: outgoing.length,                        tip: 'KPIs this affects' },
+          { label: 'Driven by',     val: incoming.length,                        tip: 'KPIs that affect this' },
+        ].map(({ label, val, tip }) => (
+          <div key={label} style={{ background: '#0f172a', borderRadius: 6, padding: '7px 8px', textAlign: 'center' }}
+            title={tip}>
+            <div style={{ color: '#f1f5f9', fontWeight: 700, fontSize: 18, lineHeight: 1 }}>{val}</div>
+            <div style={{ color: '#64748b', fontSize: 9, marginTop: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
           </div>
         ))}
       </div>
+
+      {/* Outgoing — "This KPI drives…" */}
       {outgoing.length > 0 && (
         <div style={{ marginBottom: 10 }}>
-          <div style={{ color: '#94a3b8', fontSize: 10, marginBottom: 4 }}>OUTGOING ({outgoing.length})</div>
-          {outgoing.slice(0, 5).map((e, i) => {
+          <div style={{ color: '#64748b', fontSize: 10, fontWeight: 700, marginBottom: 5,
+            textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            ▶ This KPI drives
+          </div>
+          {outgoing.slice(0, 6).map((e, i) => {
             const tn = nodes.find(n => n.key === e.target)
+            const rc = RELATION_COLOR[e.relation] || '#94a3b8'
             return (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between',
-                padding: '3px 0', borderBottom: '1px solid #1e293b' }}>
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '4px 0', borderBottom: '1px solid #0f172a' }}>
                 <span style={{ color: '#e2e8f0', fontSize: 11 }}>{tn?.name || e.target}</span>
-                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999,
-                  background: (RELATION_COLOR[e.relation] || '#94a3b8') + '33',
-                  color: RELATION_COLOR[e.relation] || '#94a3b8' }}>
+                <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 999,
+                  background: rc + '28', color: rc, whiteSpace: 'nowrap', marginLeft: 6 }}>
                   {fmtRelation(e.relation)}
                 </span>
               </div>
@@ -494,18 +522,23 @@ function NodeInspector({ nodeKey, nodes, edges, onClose }) {
           })}
         </div>
       )}
+
+      {/* Incoming — "Influenced by…" */}
       {incoming.length > 0 && (
         <div>
-          <div style={{ color: '#94a3b8', fontSize: 10, marginBottom: 4 }}>INCOMING ({incoming.length})</div>
-          {incoming.slice(0, 5).map((e, i) => {
+          <div style={{ color: '#64748b', fontSize: 10, fontWeight: 700, marginBottom: 5,
+            textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            ◀ Influenced by
+          </div>
+          {incoming.slice(0, 6).map((e, i) => {
             const sn = nodes.find(n => n.key === e.source)
+            const rc = RELATION_COLOR[e.relation] || '#94a3b8'
             return (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between',
-                padding: '3px 0', borderBottom: '1px solid #1e293b' }}>
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '4px 0', borderBottom: '1px solid #0f172a' }}>
                 <span style={{ color: '#e2e8f0', fontSize: 11 }}>{sn?.name || e.source}</span>
-                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999,
-                  background: (RELATION_COLOR[e.relation] || '#94a3b8') + '33',
-                  color: RELATION_COLOR[e.relation] || '#94a3b8' }}>
+                <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 999,
+                  background: rc + '28', color: rc, whiteSpace: 'nowrap', marginLeft: 6 }}>
                   {fmtRelation(e.relation)}
                 </span>
               </div>
@@ -898,20 +931,62 @@ export default function OntologyPage() {
                     onSelect={setSelected}
                   />
                 )}
-                {/* Legend — consistent Title Case */}
-                <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                  {Object.entries(RELATION_COLOR).map(([rel, col]) => (
-                    <span key={rel} style={{ fontSize: 11, color: col, display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <span style={{ width: 16, height: 2, background: col, display: 'inline-block' }}/>
-                      {fmtRelation(rel)}
-                    </span>
-                  ))}
-                  {Object.entries(DOMAIN_COLOR).filter(([d]) => d !== 'other').map(([d, c]) => (
-                    <span key={d} style={{ fontSize: 11, color: c, display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: c, display: 'inline-block' }}/>
-                      {fmtDomain(d)}
-                    </span>
-                  ))}
+                {/* Legend panel */}
+                <div style={{ marginTop: 10, background: '#0f172a', borderRadius: 8,
+                  border: '1px solid #1e293b', padding: '12px 16px',
+                  display: 'grid', gridTemplateColumns: 'auto auto 1fr', gap: '0 28px', alignItems: 'start' }}>
+
+                  {/* Edge types */}
+                  <div>
+                    <div style={{ color: '#475569', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+                      letterSpacing: '0.07em', marginBottom: 8 }}>Relationship Types</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {Object.entries(RELATION_COLOR).map(([rel, col]) => (
+                        <div key={rel} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <svg width="22" height="8" style={{ flexShrink: 0 }}>
+                            <line x1="0" y1="4" x2="16" y2="4" stroke={col} strokeWidth="2" strokeDasharray={rel === 'ANTI_CORRELATES' ? '3 2' : 'none'}/>
+                            <polygon points="16,1 22,4 16,7" fill={col} opacity="0.85"/>
+                          </svg>
+                          <span style={{ color: '#cbd5e1', fontSize: 12 }}>{fmtRelation(rel)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Domains */}
+                  <div>
+                    <div style={{ color: '#475569', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+                      letterSpacing: '0.07em', marginBottom: 8 }}>KPI Domains</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {Object.entries(DOMAIN_COLOR).filter(([d]) => d !== 'other').map(([d, c]) => (
+                        <div key={d} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ width: 11, height: 11, borderRadius: '50%', background: c,
+                            display: 'inline-block', flexShrink: 0 }}/>
+                          <span style={{ color: '#cbd5e1', fontSize: 12 }}>{fmtDomain(d)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* How to read */}
+                  <div>
+                    <div style={{ color: '#475569', fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+                      letterSpacing: '0.07em', marginBottom: 8 }}>How to Read</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {[
+                        ['Node size',    'Bigger = more influential KPI'],
+                        ['Arrow direction', 'Shows direction of influence'],
+                        ['Line opacity', 'Stronger = higher correlation'],
+                        ['Click a node', 'Inspect connections & drivers'],
+                        ['Scroll / drag', 'Zoom and pan the graph'],
+                      ].map(([k, v]) => (
+                        <div key={k} style={{ display: 'flex', gap: 6, fontSize: 11 }}>
+                          <span style={{ color: '#64748b', whiteSpace: 'nowrap' }}>{k}:</span>
+                          <span style={{ color: '#94a3b8' }}>{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -925,20 +1000,33 @@ export default function OntologyPage() {
                   />
                 ) : stats?.top_nodes_by_pagerank?.length > 0 && (
                   <div style={{ background: '#1e293b', borderRadius: 8, border: '1px solid #334155', padding: 14 }}>
-                    <div style={{ color: '#94a3b8', fontSize: 11, marginBottom: 10, fontWeight: 700, letterSpacing: '0.05em' }}>
-                      TOP NODES BY PAGERANK
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ color: '#e2e8f0', fontSize: 12, fontWeight: 700 }}>
+                        Most Influential KPIs
+                      </div>
+                      <div style={{ color: '#64748b', fontSize: 10, marginTop: 2 }}>
+                        KPIs other metrics depend on most — click to inspect
+                      </div>
                     </div>
                     {stats.top_nodes_by_pagerank.map((n, i) => (
                       <div key={n.key} onClick={() => setSelected(n.key)}
                         style={{ display: 'flex', alignItems: 'center', gap: 8,
-                          padding: '6px 0', borderBottom: '1px solid #0f172a', cursor: 'pointer' }}>
-                        <span style={{ color: '#64748b', fontSize: 11, width: 16 }}>{i + 1}</span>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ color: '#f1f5f9', fontSize: 12 }}>{n.name}</div>
+                          padding: '7px 6px', borderRadius: 6, cursor: 'pointer',
+                          borderBottom: '1px solid #0f172a',
+                          transition: 'background 0.1s' }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#0f172a'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <span style={{ color: '#334155', fontSize: 11, width: 16, textAlign: 'center',
+                          fontWeight: 700 }}>{i + 1}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ color: '#f1f5f9', fontSize: 12, fontWeight: 600 }}>{n.name}</div>
                           <div style={{ color: DOMAIN_COLOR[n.domain] || '#94a3b8', fontSize: 10 }}>{fmtDomain(n.domain)}</div>
                         </div>
-                        <div style={{ color: '#00AEEF', fontWeight: 700, fontSize: 13 }}>
-                          {Math.round((n.pagerank || 0) * 100)}%
+                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                          <div style={{ color: '#00AEEF', fontWeight: 700, fontSize: 13 }}>
+                            {Math.round((n.pagerank || 0) * 100)}%
+                          </div>
+                          <div style={{ color: '#475569', fontSize: 9 }}>influence</div>
                         </div>
                       </div>
                     ))}
@@ -947,18 +1035,26 @@ export default function OntologyPage() {
 
                 {stats?.edge_type_distribution && (
                   <div style={{ background: '#1e293b', borderRadius: 8, border: '1px solid #334155', padding: 14 }}>
-                    <div style={{ color: '#94a3b8', fontSize: 11, marginBottom: 10, fontWeight: 700, letterSpacing: '0.05em' }}>
-                      RELATIONSHIP TYPES
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ color: '#e2e8f0', fontSize: 12, fontWeight: 700 }}>Relationship Breakdown</div>
+                      <div style={{ color: '#64748b', fontSize: 10, marginTop: 2 }}>How KPIs are connected</div>
                     </div>
-                    {Object.entries(stats.edge_type_distribution).map(([rel, cnt]) => (
-                      <div key={rel} style={{ display: 'flex', justifyContent: 'space-between',
-                        alignItems: 'center', padding: '4px 0' }}>
-                        <span style={{ fontSize: 12, color: RELATION_COLOR[rel] || '#94a3b8' }}>
-                          {fmtRelation(rel)}
-                        </span>
-                        <span style={{ color: '#f1f5f9', fontWeight: 600, fontSize: 13 }}>{cnt}</span>
-                      </div>
-                    ))}
+                    {Object.entries(stats.edge_type_distribution).map(([rel, cnt]) => {
+                      const rc = RELATION_COLOR[rel] || '#94a3b8'
+                      const total = Object.values(stats.edge_type_distribution).reduce((s, v) => s + v, 0)
+                      const pct = total ? Math.round(cnt / total * 100) : 0
+                      return (
+                        <div key={rel} style={{ marginBottom: 8 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                            <span style={{ fontSize: 12, color: rc, fontWeight: 600 }}>{fmtRelation(rel)}</span>
+                            <span style={{ color: '#94a3b8', fontSize: 11 }}>{cnt} links</span>
+                          </div>
+                          <div style={{ height: 3, background: '#0f172a', borderRadius: 2, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${pct}%`, background: rc, borderRadius: 2, opacity: 0.7 }}/>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>
