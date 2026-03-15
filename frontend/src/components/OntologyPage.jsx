@@ -124,9 +124,12 @@ function useForceLayout(nodes, edges, width, height) {
   useEffect(() => {
     if (!nodes.length) return
 
+    // Always reset when canvas size changes so nodes re-spread on the new canvas
+    posRef.current = {}
+    velRef.current = {}
+
     const domains = [...new Set(nodes.map(n => n.domain))]
     nodes.forEach((n, i) => {
-      if (posRef.current[n.key]) return
       const di = domains.indexOf(n.domain)
       const angle = (di / domains.length) * Math.PI * 2 + (i * 0.3)
       const r = Math.min(width, height) * 0.38          // wider initial spread
