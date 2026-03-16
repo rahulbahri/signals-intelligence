@@ -22,6 +22,41 @@ const PANEL_ANIM = `
 const MONTHS     = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const MONTH_NUMS = [1,2,3,4,5,6,7,8,9,10,11,12]
 
+// ── Period presets ───────────────────────────────────────────────────────────
+const PERIOD_PRESETS = [
+  { id: 'fy', label: 'Full Year', months: [1,2,3,4,5,6,7,8,9,10,11,12] },
+  { id: 'h1', label: 'H1',        months: [1,2,3,4,5,6] },
+  { id: 'h2', label: 'H2',        months: [7,8,9,10,11,12] },
+  { id: 'q1', label: 'Q1',        months: [1,2,3] },
+  { id: 'q2', label: 'Q2',        months: [4,5,6] },
+  { id: 'q3', label: 'Q3',        months: [7,8,9] },
+  { id: 'q4', label: 'Q4',        months: [10,11,12] },
+  { id: 'r3', label: 'Last 3M',   months: [10,11,12] },
+  { id: 'r6', label: 'Last 6M',   months: [7,8,9,10,11,12] },
+]
+
+// ── Period-aware fingerprint view ─────────────────────────────────────────────
+function applyPeriod(fingerprint, monthNums) {
+  if (!monthNums || monthNums.length === 12) return fingerprint
+  return fingerprint.map(kpi => {
+    const hits = (kpi.monthly || []).filter(m => {
+      const mo = parseInt(m.period.split('-')[1], 10)
+      return monthNums.includes(mo) && m.value != null
+    })
+    const periodAvg = hits.length
+      ? hits.reduce((s, m) => s + m.value, 0) / hits.length
+      : kpi.avg
+    const newStatus = cellStatus(periodAvg, kpi.target, kpi.direction)
+    return { ...kpi, avg: periodAvg, fy_status: newStatus }
+  })
+}
+
+// ── Period label ──────────────────────────────────────────────────────────────
+function periodLabel(preset) {
+  if (!preset || preset.id === 'fy') return 'Full Year'
+  return preset.label
+}
+
 const SOURCE = {
   dashboard:   { label: 'Command Center',  color: '#0055A4', text: 'text-blue-700',    bg: 'bg-blue-50',    border: 'border-blue-200'    },
   fingerprint: { label: 'Org Fingerprint', color: '#7c3aed', text: 'text-violet-700',  bg: 'bg-violet-50',  border: 'border-violet-200'  },
@@ -633,6 +668,85 @@ function DomainDetailPanel({ domain, kpis, onNavigate, onClose }) {
   )
 }
 
+// ── Period Selector ───────────────────────────────────────────────────────────
+function PeriodSelector({ selected, onChange }) {
+  const [showCustom, setShowCustom] = useState(false)
+  const [customMonths, setCustomMonths] = useState([])
+
+  function toggleMonth(m) {
+    setCustomMonths(prev =>
+      prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m].sort((a,b) => a-b)
+    )
+  }
+
+  function applyCustom() {
+    if (!customMonths.length) return
+    onChange({ id: 'custom', label: `${customMonths.length}M`, months: customMonths })
+    setShowCustom(false)
+  }
+
+  return (
+    <div className="relative flex items-center gap-1 flex-wrap">
+      {PERIOD_PRESETS.map(p => (
+        <button
+          key={p.id}
+          onClick={() => { onChange(p); setShowCustom(false) }}
+          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border ${
+            selected?.id === p.id
+              ? 'bg-[#0055A4] text-white border-[#0055A4] shadow-sm'
+              : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300 hover:text-slate-700'
+          }`}>
+          {p.label}
+        </button>
+      ))}
+      {/* Custom picker toggle */}
+      <button
+        onClick={() => setShowCustom(v => !v)}
+        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border ${
+          selected?.id === 'custom'
+            ? 'bg-[#0055A4] text-white border-[#0055A4] shadow-sm'
+            : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300 hover:text-slate-700'
+        }`}>
+        Custom {selected?.id === 'custom' ? `(${selected.label})` : ''}
+      </button>
+
+      {/* Custom month picker dropdown */}
+      {showCustom && (
+        <div className="absolute top-full left-0 mt-1.5 z-30 bg-white border border-slate-200 rounded-2xl shadow-xl p-4 min-w-[280px]">
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Select months</div>
+          <div className="grid grid-cols-6 gap-1.5 mb-3">
+            {MONTHS.map((mo, idx) => {
+              const m   = idx + 1
+              const sel = customMonths.includes(m)
+              return (
+                <button key={m} onClick={() => toggleMonth(m)}
+                  className={`text-[10px] font-bold py-1 rounded-lg border transition-all ${
+                    sel
+                      ? 'bg-[#0055A4] text-white border-[#0055A4]'
+                      : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-[#0055A4]/40 hover:text-[#0055A4]'
+                  }`}>
+                  {mo}
+                </button>
+              )
+            })}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={applyCustom}
+              disabled={!customMonths.length}
+              className="flex-1 py-1.5 bg-[#0055A4] text-white text-[11px] font-bold rounded-lg disabled:opacity-40 hover:bg-[#004494] transition-colors">
+              Apply {customMonths.length > 0 ? `(${customMonths.length}mo)` : ''}
+            </button>
+            <button onClick={() => setShowCustom(false)}
+              className="px-3 py-1.5 bg-slate-100 text-slate-500 text-[11px] font-bold rounded-lg hover:bg-slate-200 transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SidePanel({ card, fingerprint, onNavigate, onClose }) {
   if (!card) return null
   return (
@@ -841,7 +955,8 @@ function DomainStoryCard({ domain, kpis, onNavigate, onExpand }) {
 
 // ── MAIN COMPONENT ────────────────────────────────────────────────────────────
 export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
-  const [sideCard, setSideCard] = useState(null)
+  const [sideCard,  setSideCard]  = useState(null)
+  const [period,    setPeriod]    = useState(PERIOD_PRESETS[0]) // Full Year default
   const dateStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
 
   if (!fingerprint?.length) {
@@ -855,28 +970,32 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
     )
   }
 
-  // ── Derived ──────────────────────────────────────────────────────────────
-  const greenKpis  = fingerprint.filter(k => k.fy_status === 'green')
-  const yellowKpis = fingerprint.filter(k => k.fy_status === 'yellow')
-  const redKpis    = fingerprint.filter(k => k.fy_status === 'red')
-  const total      = fingerprint.length
+  // ── Period-filtered view ────────────────────────────────────────────────
+  // cellStatus is defined at module level so applyPeriod can use it
+  const fp = useMemo(() => applyPeriod(fingerprint, period?.months), [fingerprint, period])
+
+  // ── Derived (all use period-filtered `fp`) ─────────────────────────────
+  const greenKpis  = fp.filter(k => k.fy_status === 'green')
+  const yellowKpis = fp.filter(k => k.fy_status === 'yellow')
+  const redKpis    = fp.filter(k => k.fy_status === 'red')
+  const total      = fp.length
   const bhi        = total > 0 ? Math.round((greenKpis.length * 100 + yellowKpis.length * 60) / total) : null
   const bhiColor   = bhi == null ? '#94a3b8' : bhi >= 80 ? '#059669' : bhi >= 60 ? '#d97706' : '#dc2626'
   const bhiLabel   = bhi == null ? 'No data' : bhi >= 80 ? 'Healthy' : bhi >= 60 ? 'Caution' : 'At Risk'
 
-  const thesis  = buildThesis(fingerprint, bhi)
-  const signals = useMemo(() => detectSignals(fingerprint), [fingerprint])
-  const outlook = useMemo(() => buildOutlook(fingerprint, bridgeData), [fingerprint, bridgeData])
+  const thesis  = buildThesis(fp, bhi)
+  const signals = useMemo(() => detectSignals(fp), [fp])
+  const outlook = useMemo(() => buildOutlook(fp, bridgeData), [fp, bridgeData])
 
   const domainGroups = useMemo(() => {
     const groups = {}
-    fingerprint.forEach(k => {
+    fp.forEach(k => {
       const d = getDomain(k)
       groups[d] = groups[d] || []
       groups[d].push(k)
     })
     return groups
-  }, [fingerprint])
+  }, [fp])
 
   const storyDomains = ['growth', 'retention', 'efficiency', 'cashflow'].filter(d => (domainGroups[d]?.length || 0) >= 1)
 
@@ -885,7 +1004,7 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
     return Math.abs(gapPct(b) || 0) - Math.abs(gapPct(a) || 0)
   })
 
-  const radarData = fingerprint.filter(k => k.avg != null && k.target != null).slice(0, 10).map(k => ({
+  const radarData = fp.filter(k => k.avg != null && k.target != null).slice(0, 10).map(k => ({
     kpi:    k.name.length > 15 ? k.name.slice(0, 13) + '…' : k.name,
     actual: Math.min(vsTarget(k), 135),
     target: 100,
@@ -895,7 +1014,7 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
     ? Object.values(bridgeData.kpis).filter(k => k.avg_gap_pct != null && k.overall_status !== 'green').sort((a, b) => a.avg_gap_pct - b.avg_gap_pct).slice(0, 4)
     : []
 
-  const streakAlerts = fingerprint.filter(k => k.monthly?.length && redStreak(k) >= 2).map(k => ({ ...k, streak: redStreak(k) })).sort((a, b) => b.streak - a.streak).slice(0, 4)
+  const streakAlerts = fp.filter(k => k.monthly?.length && redStreak(k) >= 2).map(k => ({ ...k, streak: redStreak(k) })).sort((a, b) => b.streak - a.streak).slice(0, 4)
   const strongSorted = [...greenKpis].sort((a, b) => (gapPct(b) || 0) - (gapPct(a) || 0))
 
   return (
@@ -928,14 +1047,23 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
 
             {/* Thesis + Meta */}
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-3 mb-1">
+              <div className="flex items-center gap-3 mb-1 flex-wrap">
                 <div className="flex items-center gap-1.5">
                   <Layers size={12} className="text-white/40"/>
-                  <span className="text-[11px] font-semibold text-white/40 uppercase tracking-widest">Board Intelligence Brief</span>
+                  <span className="text-[11px] font-semibold text-white/40 uppercase tracking-widest">Executive Signal</span>
                 </div>
                 <span className="text-[11px] text-white/30">{dateStr}</span>
               </div>
               <p className="text-[17px] font-bold text-white leading-snug mb-3 max-w-2xl">{thesis}</p>
+
+              {/* Period selector — sits prominently in hero */}
+              <div className="mb-3 flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider flex-shrink-0">Period</span>
+                <div className="relative">
+                  <PeriodSelector selected={period} onChange={setPeriod}/>
+                </div>
+              </div>
+
               <div className="flex flex-wrap items-center gap-2 mb-4">
                 {redKpis.length > 0 && (
                   <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-red-500/20 border border-red-400/25 text-red-200 flex items-center gap-1.5">
@@ -954,7 +1082,7 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
                   </span>
                 )}
                 <span className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-white/8 border border-white/12 text-white/40">
-                  {fingerprint.length} KPIs
+                  {fp.length} KPIs · {periodLabel(period)}
                 </span>
               </div>
               <div className="max-w-sm">

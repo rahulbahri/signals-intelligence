@@ -19,7 +19,7 @@ import OntologyPage from './components/OntologyPage.jsx'
 import BoardReady from './components/BoardReady.jsx'
 
 const TABS = [
-  { id: 'board',       label: 'Board Ready',       Icon: Layers          },
+  { id: 'board',       label: 'Executive Signal',  Icon: Layers          },
   { id: 'dashboard',   label: 'Command Center',    Icon: LayoutDashboard },
   { id: 'fingerprint', label: 'Org Fingerprint',   Icon: Fingerprint     },
   { id: 'trends',      label: 'Monthly Trends',    Icon: TrendingUp      },
@@ -30,7 +30,7 @@ const TABS = [
 ]
 
 const PAGE_TITLES = {
-  board:       'Board Ready Brief',
+  board:       'Executive Signal',
   dashboard:   'Actionable Intelligence Command Center',
   fingerprint: 'Organisational Fingerprint',
   trends:      'Monthly KPI Trends',
