@@ -234,7 +234,7 @@ function ForceGraph({ nodes, edges, selected, onSelect }) {
 
   return (
     <div style={{ position: 'relative' }}>
-      <svg ref={svgRef} width="100%" height="750" viewBox={`0 0 ${W} ${H}`}
+      <svg ref={svgRef} width="100%" height="1000" viewBox={`0 0 ${W} ${H}`}
         style={{ background: '#0f172a', borderRadius: 8, display: 'block', cursor: 'grab' }}
         {...handlers}>
         {/* Arrow marker defs stay outside the transform group */}
@@ -366,7 +366,7 @@ function ClusterGraph({ nodes, edges, selected, onSelect }) {
 
   return (
     <div style={{ position: 'relative' }}>
-      <svg ref={svgRef} width="100%" height="750" viewBox={`0 0 ${W} ${H}`}
+      <svg ref={svgRef} width="100%" height="1000" viewBox={`0 0 ${W} ${H}`}
         style={{ background: '#0f172a', borderRadius: 8, display: 'block', cursor: 'grab' }}
         {...handlers}>
         <defs>
@@ -617,7 +617,7 @@ function buildFocusNarrative(focalKey, nodes, edges, influenceScores) {
 // ── Radial Focus Graph ────────────────────────────────────────────────────
 function FocusGraph({ nodes, edges, focalKey, influenceScores }) {
   const svgRef = useRef(null)
-  const W = 900, H = 660
+  const W = 900, H = 880
   const { vp, handlers, zoomBy, reset } = useZoomPan(svgRef, W, H)
   const { scale, tx, ty } = vp
 
@@ -643,7 +643,7 @@ function FocusGraph({ nodes, edges, focalKey, influenceScores }) {
   }, [focalKey, influenceScores])
 
   if (!focalKey || !nodeMap[focalKey]) return (
-    <div style={{ height: 660, background: '#0f172a', borderRadius: 8, display: 'flex',
+    <div style={{ height: 880, background: '#0f172a', borderRadius: 8, display: 'flex',
       alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
       <Network size={40} color="#334155"/>
       <p style={{ color: '#475569', fontSize: 14 }}>Select a KPI above to see its influence map</p>
