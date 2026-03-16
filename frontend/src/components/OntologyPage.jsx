@@ -212,7 +212,7 @@ function useForceLayout(nodes, edges, width, height) {
 }
 
 // ── Force graph SVG ───────────────────────────────────────────────────────
-function ForceGraph({ nodes, edges, selected, onSelect }) {
+function ForceGraph({ nodes, edges, selected, onSelect, linkFilter, domainFilter }) {
   const W = 1800, H = 1400      // large virtual canvas so nodes have room to breathe
   const pos = useForceLayout(nodes, edges, W, H)
 
@@ -229,6 +229,11 @@ function ForceGraph({ nodes, edges, selected, onSelect }) {
     })
     return s
   }, [selected, edges])
+
+  // Fast domain lookup for edge filtering
+  const domainByKey = useMemo(() => {
+    const m = {}; nodes.forEach(n => { m[n.key] = n.domain }); return m
+  }, [nodes])
 
   if (!nodes.length) return null
 
@@ -252,14 +257,18 @@ function ForceGraph({ nodes, edges, selected, onSelect }) {
           {edges.map((e, i) => {
             const pa = pos[e.source], pb = pos[e.target]
             if (!pa || !pb) return null
-            const dimmed = neighborSet && !neighborSet.has(e.source) && !neighborSet.has(e.target)
+            const neighbourDim  = neighborSet && !neighborSet.has(e.source) && !neighborSet.has(e.target)
+            const linkDim       = linkFilter?.size > 0 && !linkFilter.has(e.relation)
+            const srcDom        = domainByKey[e.source], tgtDom = domainByKey[e.target]
+            const domainDim     = domainFilter?.size > 0 && !domainFilter.has(srcDom) && !domainFilter.has(tgtDom)
+            const dimmed        = neighbourDim || linkDim || domainDim
             const col = RELATION_COLOR[e.relation] || '#64748b'
             return (
               <line key={i}
                 x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}
                 stroke={col}
                 strokeWidth={Math.max(0.5, (e.strength || 0.4) * 2)}
-                opacity={dimmed ? 0.05 : 0.70}
+                opacity={dimmed ? 0.04 : 0.70}
                 markerEnd={`url(#arr-${e.relation})`}
               />
             )
@@ -268,7 +277,9 @@ function ForceGraph({ nodes, edges, selected, onSelect }) {
           {nodes.map(n => {
             const p = pos[n.key]
             if (!p) return null
-            const dimmed = neighborSet && !neighborSet.has(n.key)
+            const neighbourDim = neighborSet && !neighborSet.has(n.key)
+            const domainDim    = domainFilter?.size > 0 && !domainFilter.has(n.domain)
+            const dimmed       = neighbourDim || domainDim
             const r = 6 + (n.centrality || 0) * 18
             const col = DOMAIN_COLOR[n.domain] || '#94a3b8'
             const isSelected = selected === n.key
@@ -301,7 +312,7 @@ function ForceGraph({ nodes, edges, selected, onSelect }) {
 }
 
 // ── Cluster View ─────────────────────────────────────────────────────────
-function ClusterGraph({ nodes, edges, selected, onSelect }) {
+function ClusterGraph({ nodes, edges, selected, onSelect, linkFilter, domainFilter }) {
   const W = 1600, H = 1200
 
   const svgRef = useRef(null)
@@ -364,6 +375,11 @@ function ClusterGraph({ nodes, edges, selected, onSelect }) {
     return s
   }, [selected, edges])
 
+  // Fast domain lookup for edge filter
+  const domainByKey = useMemo(() => {
+    const m = {}; nodes.forEach(n => { m[n.key] = n.domain }); return m
+  }, [nodes])
+
   return (
     <div style={{ position: 'relative' }}>
       <svg ref={svgRef} width="100%" height="1000" viewBox={`0 0 ${W} ${H}`}
@@ -379,13 +395,14 @@ function ClusterGraph({ nodes, edges, selected, onSelect }) {
         </defs>
 
         <g transform={`translate(${tx},${ty}) scale(${scale})`}>
-          {/* Domain bubble backgrounds */}
+          {/* Domain bubble backgrounds — dim when domain filter active */}
           {Object.entries(clusterPos).map(([d, pos]) => {
             const dnodes = byDomain[d] || []
             const R = Math.min(130, 60 + dnodes.length * 11)
             const col = DOMAIN_COLOR[d] || '#94a3b8'
+            const domainDimmed = domainFilter?.size > 0 && !domainFilter.has(d)
             return (
-              <g key={d}>
+              <g key={d} opacity={domainDimmed ? 0.18 : 1}>
                 <circle cx={pos.x} cy={pos.y} r={R + 28}
                   fill={col} fillOpacity={0.05}
                   stroke={col} strokeOpacity={0.20} strokeWidth={1.5} strokeDasharray="6 5"/>
@@ -403,7 +420,11 @@ function ClusterGraph({ nodes, edges, selected, onSelect }) {
           {edges.map((e, i) => {
             const pa = nodePos[e.source], pb = nodePos[e.target]
             if (!pa || !pb) return null
-            const dimmed = neighborSet && !neighborSet.has(e.source) && !neighborSet.has(e.target)
+            const neighbourDim = neighborSet && !neighborSet.has(e.source) && !neighborSet.has(e.target)
+            const linkDim      = linkFilter?.size > 0 && !linkFilter.has(e.relation)
+            const srcDom       = domainByKey[e.source], tgtDom = domainByKey[e.target]
+            const domainDim    = domainFilter?.size > 0 && !domainFilter.has(srcDom) && !domainFilter.has(tgtDom)
+            const dimmed       = neighbourDim || linkDim || domainDim
             const col = RELATION_COLOR[e.relation] || '#64748b'
             return (
               <line key={i} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}
@@ -417,7 +438,9 @@ function ClusterGraph({ nodes, edges, selected, onSelect }) {
           {nodes.map(n => {
             const p = nodePos[n.key]
             if (!p) return null
-            const dimmed = neighborSet && !neighborSet.has(n.key)
+            const neighbourDim = neighborSet && !neighborSet.has(n.key)
+            const domainDim    = domainFilter?.size > 0 && !domainFilter.has(n.domain)
+            const dimmed       = neighbourDim || domainDim
             const r = 5 + (n.centrality || 0) * 16
             const col = DOMAIN_COLOR[n.domain] || '#94a3b8'
             const isSel = selected === n.key
@@ -615,7 +638,7 @@ function buildFocusNarrative(focalKey, nodes, edges, influenceScores) {
 }
 
 // ── Radial Focus Graph ────────────────────────────────────────────────────
-function FocusGraph({ nodes, edges, focalKey, influenceScores }) {
+function FocusGraph({ nodes, edges, focalKey, influenceScores, linkFilter, domainFilter }) {
   const svgRef = useRef(null)
   const W = 900, H = 880
   const { vp, handlers, zoomBy, reset } = useZoomPan(svgRef, W, H)
@@ -682,10 +705,12 @@ function FocusGraph({ nodes, edges, focalKey, influenceScores }) {
             const info        = influenceScores[neighbor]
             const col         = RELATION_COLOR[e.relation] || '#64748b'
             const sw          = isFocalEdge ? Math.max(0.8, (info?.score || 0.1) * 4) : 0.4
+            const linkDimmed  = linkFilter?.size > 0 && !linkFilter.has(e.relation)
+            const baseOpacity = isFocalEdge ? 0.75 : 0.18
             return (
               <line key={i} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}
                 stroke={col} strokeWidth={sw}
-                opacity={isFocalEdge ? 0.75 : 0.18}
+                opacity={linkDimmed ? 0.04 : baseOpacity}
                 markerEnd={`url(#fa-${e.relation})`}/>
             )
           })}
@@ -693,14 +718,15 @@ function FocusGraph({ nodes, edges, focalKey, influenceScores }) {
           {/* Nodes */}
           {Object.entries(layout).map(([key, pos]) => {
             const node = nodeMap[key]; if (!node) return null
-            const isFocal = key === focalKey
-            const info    = influenceScores[key]
-            const col     = DOMAIN_COLOR[node.domain] || '#94a3b8'
-            const r       = isFocal ? 24 : Math.max(7, 7 + (info?.score || 0) * 14)
+            const isFocal     = key === focalKey
+            const info        = influenceScores[key]
+            const col         = DOMAIN_COLOR[node.domain] || '#94a3b8'
+            const r           = isFocal ? 24 : Math.max(7, 7 + (info?.score || 0) * 14)
+            const domainDimmed = !isFocal && domainFilter?.size > 0 && !domainFilter.has(node.domain)
             // Hop-distance ring colour: 1=bright, 2=mid, 3=faint
             const hopCol  = info?.minDepth === 1 ? '#00AEEF' : info?.minDepth === 2 ? '#8b5cf6' : '#475569'
             return (
-              <g key={key}>
+              <g key={key} opacity={domainDimmed ? 0.12 : 1}>
                 {/* Soft glow */}
                 <circle cx={pos.x} cy={pos.y} r={r + 6} fill={col} opacity={0.13}/>
                 {/* Focal: pulsing dashed ring */}
@@ -1120,6 +1146,14 @@ export default function OntologyPage() {
   const [sensitivity, setSensitivity] = useState({ ...DEFAULT_SENSITIVITY })
   const [scenarios,   setScenarios]   = useState([])
 
+  // ── Legend bar filters ─────────────────────────────────────────────────
+  const [activeLinkFilters,   setActiveLinkFilters]   = useState(new Set())
+  const [activeDomainFilters, setActiveDomainFilters] = useState(new Set())
+  const toggleLinkFilter   = r => setActiveLinkFilters(p  => { const n = new Set(p); n.has(r) ? n.delete(r) : n.add(r); return n })
+  const toggleDomainFilter = d => setActiveDomainFilters(p => { const n = new Set(p); n.has(d) ? n.delete(d) : n.add(d); return n })
+  const clearLegendFilters = () => { setActiveLinkFilters(new Set()); setActiveDomainFilters(new Set()) }
+  const legendFiltersActive = activeLinkFilters.size > 0 || activeDomainFilters.size > 0
+
   // Derived: Focus Mode
   const influenceScores = useMemo(
     () => focusNode && graphMode === 'focus' ? computeInfluenceScores(focusNode, graph.nodes, graph.edges) : {},
@@ -1370,51 +1404,92 @@ export default function OntologyPage() {
             <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
 
-                {/* ── Map Key — compact bar, always above the canvas ── */}
+                {/* ── Map Key / Filter Bar ── */}
                 <div style={{ marginBottom: 8, background: '#0f172a', borderRadius: 8,
-                  border: '1px solid #1e293b', padding: '8px 14px',
+                  border: `1px solid ${legendFiltersActive ? '#334155' : '#1e293b'}`,
+                  padding: '7px 14px',
                   display: 'flex', flexWrap: 'wrap', alignItems: 'center',
-                  columnGap: 20, rowGap: 6 }}>
+                  columnGap: 6, rowGap: 5 }}>
 
-                  {/* Relationship types */}
-                  <span style={{ color: '#e2e8f0', fontSize: 10, fontWeight: 700,
-                    textTransform: 'uppercase', letterSpacing: '0.07em', flexShrink: 0 }}>
+                  {/* LINKS label */}
+                  <span style={{ color: '#94a3b8', fontSize: 10, fontWeight: 700,
+                    textTransform: 'uppercase', letterSpacing: '0.07em', flexShrink: 0,
+                    marginRight: 4 }}>
                     Links
                   </span>
-                  {Object.entries(RELATION_COLOR).map(([rel, col]) => (
-                    <div key={rel} style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-                      <svg width="20" height="8" style={{ flexShrink: 0 }}>
-                        <line x1="0" y1="4" x2="14" y2="4" stroke={col} strokeWidth="2"
-                          strokeDasharray={rel === 'ANTI_CORRELATES' ? '3 2' : 'none'}/>
-                        <polygon points="14,1 20,4 14,7" fill={col} opacity="0.9"/>
-                      </svg>
-                      <span style={{ color: '#e2e8f0', fontSize: 11 }}>{fmtRelation(rel)}</span>
-                    </div>
-                  ))}
+
+                  {/* Relationship type filter buttons */}
+                  {Object.entries(RELATION_COLOR).map(([rel, col]) => {
+                    const active = activeLinkFilters.has(rel)
+                    const faded  = legendFiltersActive && !active
+                    return (
+                      <div key={rel} onClick={() => toggleLinkFilter(rel)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
+                          cursor: 'pointer', padding: '3px 9px', borderRadius: 20,
+                          background: active ? col + '28' : 'transparent',
+                          border: `1px solid ${active ? col + 'aa' : 'transparent'}`,
+                          opacity: faded ? 0.38 : 1,
+                          transition: 'all 0.15s',
+                          userSelect: 'none' }}>
+                        <svg width="20" height="8" style={{ flexShrink: 0 }}>
+                          <line x1="0" y1="4" x2="14" y2="4" stroke={col} strokeWidth="2"
+                            strokeDasharray={rel === 'ANTI_CORRELATES' ? '3 2' : 'none'}/>
+                          <polygon points="14,1 20,4 14,7" fill={col} opacity="0.9"/>
+                        </svg>
+                        <span style={{ color: active ? '#f1f5f9' : '#cbd5e1', fontSize: 11,
+                          fontWeight: active ? 600 : 400 }}>{fmtRelation(rel)}</span>
+                      </div>
+                    )
+                  })}
 
                   {/* Divider */}
-                  <span style={{ width: 1, height: 14, background: '#334155', flexShrink: 0 }}/>
+                  <span style={{ width: 1, height: 14, background: '#334155', flexShrink: 0, margin: '0 6px' }}/>
 
-                  {/* Domains */}
-                  <span style={{ color: '#e2e8f0', fontSize: 10, fontWeight: 700,
-                    textTransform: 'uppercase', letterSpacing: '0.07em', flexShrink: 0 }}>
+                  {/* DOMAINS label */}
+                  <span style={{ color: '#94a3b8', fontSize: 10, fontWeight: 700,
+                    textTransform: 'uppercase', letterSpacing: '0.07em', flexShrink: 0,
+                    marginRight: 4 }}>
                     Domains
                   </span>
-                  {Object.entries(DOMAIN_COLOR).filter(([d]) => d !== 'other').map(([d, c]) => (
-                    <div key={d} style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-                      <span style={{ width: 9, height: 9, borderRadius: '50%', background: c,
-                        display: 'inline-block', flexShrink: 0 }}/>
-                      <span style={{ color: '#e2e8f0', fontSize: 11 }}>{fmtDomain(d)}</span>
-                    </div>
-                  ))}
+
+                  {/* Domain filter buttons */}
+                  {Object.entries(DOMAIN_COLOR).filter(([d]) => d !== 'other').map(([d, c]) => {
+                    const active = activeDomainFilters.has(d)
+                    const faded  = legendFiltersActive && !active
+                    return (
+                      <div key={d} onClick={() => toggleDomainFilter(d)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
+                          cursor: 'pointer', padding: '3px 9px', borderRadius: 20,
+                          background: active ? c + '28' : 'transparent',
+                          border: `1px solid ${active ? c + 'aa' : 'transparent'}`,
+                          opacity: faded ? 0.38 : 1,
+                          transition: 'all 0.15s',
+                          userSelect: 'none' }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: c,
+                          display: 'inline-block', flexShrink: 0,
+                          boxShadow: active ? `0 0 5px ${c}88` : 'none' }}/>
+                        <span style={{ color: active ? '#f1f5f9' : '#cbd5e1', fontSize: 11,
+                          fontWeight: active ? 600 : 400 }}>{fmtDomain(d)}</span>
+                      </div>
+                    )
+                  })}
 
                   {/* Divider */}
-                  <span style={{ width: 1, height: 14, background: '#334155', flexShrink: 0 }}/>
+                  <span style={{ width: 1, height: 14, background: '#334155', flexShrink: 0, margin: '0 6px' }}/>
 
-                  {/* Reading hints */}
-                  <span style={{ color: '#e2e8f0', fontSize: 11, flexShrink: 0 }}>
-                    ⬤ size = influence &nbsp;·&nbsp; click node to inspect &nbsp;·&nbsp; scroll to zoom
-                  </span>
+                  {/* All / reset button — shown when filters active, otherwise reading hint */}
+                  {legendFiltersActive ? (
+                    <button onClick={clearLegendFilters}
+                      style={{ background: '#334155', border: '1px solid #475569', borderRadius: 20,
+                        color: '#f1f5f9', fontSize: 11, padding: '3px 12px', cursor: 'pointer',
+                        fontWeight: 600, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ fontSize: 10 }}>✕</span> Show All
+                    </button>
+                  ) : (
+                    <span style={{ color: '#64748b', fontSize: 11, flexShrink: 0 }}>
+                      ⬤ size = influence &nbsp;·&nbsp; click node to inspect &nbsp;·&nbsp; scroll to zoom
+                    </span>
+                  )}
                 </div>
 
                 {/* ── Canvas: mode-aware ─────────────────────────────── */}
@@ -1424,6 +1499,8 @@ export default function OntologyPage() {
                     edges={graph.edges}
                     focalKey={focusNode}
                     influenceScores={influenceScores}
+                    linkFilter={activeLinkFilters}
+                    domainFilter={activeDomainFilters}
                   />
                 ) : graphMode === 'sensitivity' ? (
                   <ForceGraph
@@ -1431,6 +1508,8 @@ export default function OntologyPage() {
                     edges={weightedEdges}
                     selected={selected}
                     onSelect={setSelected}
+                    linkFilter={activeLinkFilters}
+                    domainFilter={activeDomainFilters}
                   />
                 ) : clusterView ? (
                   <ClusterGraph
@@ -1438,6 +1517,8 @@ export default function OntologyPage() {
                     edges={graph.edges}
                     selected={selected}
                     onSelect={setSelected}
+                    linkFilter={activeLinkFilters}
+                    domainFilter={activeDomainFilters}
                   />
                 ) : (
                   <ForceGraph
@@ -1445,6 +1526,8 @@ export default function OntologyPage() {
                     edges={graph.edges}
                     selected={selected}
                     onSelect={setSelected}
+                    linkFilter={activeLinkFilters}
+                    domainFilter={activeDomainFilters}
                   />
                 )}
               </div>
