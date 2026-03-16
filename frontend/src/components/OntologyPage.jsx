@@ -696,20 +696,35 @@ function FocusGraph({ nodes, edges, focalKey, influenceScores }) {
             const isFocal = key === focalKey
             const info    = influenceScores[key]
             const col     = DOMAIN_COLOR[node.domain] || '#94a3b8'
-            const r       = isFocal ? 22 : Math.max(7, 7 + (info?.score || 0) * 14)
+            const r       = isFocal ? 24 : Math.max(7, 7 + (info?.score || 0) * 14)
+            // Hop-distance ring colour: 1=bright, 2=mid, 3=faint
+            const hopCol  = info?.minDepth === 1 ? '#00AEEF' : info?.minDepth === 2 ? '#8b5cf6' : '#475569'
             return (
               <g key={key}>
+                {/* Soft glow */}
                 <circle cx={pos.x} cy={pos.y} r={r + 6} fill={col} opacity={0.13}/>
-                {isFocal && <circle cx={pos.x} cy={pos.y} r={r + 16} fill="none"
-                  stroke={col} strokeWidth="2" opacity={0.35} strokeDasharray="6 4"/>}
+                {/* Focal: pulsing dashed ring */}
+                {isFocal && <circle cx={pos.x} cy={pos.y} r={r + 18} fill="none"
+                  stroke={col} strokeWidth="2" opacity={0.4} strokeDasharray="6 4"/>}
+                {/* Non-focal: hop-distance ring */}
+                {!isFocal && <circle cx={pos.x} cy={pos.y} r={r + 4} fill="none"
+                  stroke={hopCol} strokeWidth="1.5" opacity={0.5}/>}
                 <circle cx={pos.x} cy={pos.y} r={r} fill={col} opacity={1}/>
+                {/* Node name */}
                 <text x={pos.x} y={pos.y + r + 13} textAnchor="middle"
                   fontSize={isFocal ? '12' : '10'} fontWeight={isFocal ? '700' : '400'}
                   fill="#f1f5f9" style={{ pointerEvents: 'none' }}>{node.name}</text>
+                {/* Focal: "FOCUS" badge instead of a number */}
+                {isFocal && (
+                  <text x={pos.x} y={pos.y + r + 25} textAnchor="middle"
+                    fontSize="8" fontWeight="800" fill={col} letterSpacing="1"
+                    style={{ pointerEvents: 'none' }}>FOCUS</text>
+                )}
+                {/* Non-focal: hop label only — no misleading % */}
                 {!isFocal && info && (
-                  <text x={pos.x} y={pos.y + r + 23} textAnchor="middle"
-                    fontSize="9" fill="#475569" style={{ pointerEvents: 'none' }}>
-                    {Math.round(info.score * 100)}%
+                  <text x={pos.x} y={pos.y + r + 24} textAnchor="middle"
+                    fontSize="8" fill={hopCol} style={{ pointerEvents: 'none' }}>
+                    {info.minDepth === 1 ? '1 hop' : `${info.minDepth} hops`}
                   </text>
                 )}
               </g>
@@ -718,9 +733,16 @@ function FocusGraph({ nodes, edges, focalKey, influenceScores }) {
         </g>
       </svg>
       <ZoomControls scale={scale} zoomBy={zoomBy} reset={reset}/>
+      {/* Reading guide overlay — bottom left */}
       <div style={{ position: 'absolute', bottom: 14, left: 14, background: '#0f172acc',
-        borderRadius: 5, padding: '3px 8px', color: '#e2e8f0', fontSize: 10, pointerEvents: 'none' }}>
-        Scroll to zoom · Drag to pan
+        borderRadius: 6, padding: '6px 10px', pointerEvents: 'none',
+        display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <span style={{ color: '#00AEEF', fontSize: 9, fontWeight: 700 }}>━ 1 hop</span>
+          <span style={{ color: '#8b5cf6', fontSize: 9, fontWeight: 700 }}>━ 2 hops</span>
+          <span style={{ color: '#475569', fontSize: 9, fontWeight: 700 }}>━ 3 hops</span>
+          <span style={{ color: '#64748b', fontSize: 9 }}>·  node size = connection strength  ·  scroll to zoom</span>
+        </div>
       </div>
     </div>
   )
@@ -737,13 +759,17 @@ function InfluencePanel({ focalKey, nodes, influenceScores, narrative }) {
         <p style={{ color: '#cbd5e1', fontSize: 11, lineHeight: 1.65 }}>{narrative}</p>
       </div>
       <div style={{ background: '#1e293b', borderRadius: 8, border: '1px solid #334155', padding: 14 }}>
-        <div style={{ color: '#e2e8f0', fontSize: 12, fontWeight: 700, marginBottom: 4 }}>Influence Ranking</div>
-        <div style={{ color: '#94a3b8', fontSize: 10, marginBottom: 10 }}>Ranked by path-weighted impact</div>
+        <div style={{ color: '#e2e8f0', fontSize: 12, fontWeight: 700, marginBottom: 2 }}>Connection Strength Index</div>
+        <div style={{ color: '#64748b', fontSize: 10, marginBottom: 10, lineHeight: 1.5 }}>
+          Bar length = relative strength of path to focus node.<br/>
+          100 = strongest connection found. Not a share — scores don't sum to 100.
+        </div>
         {ranked.map(([key, info], i) => {
-          const n = nm[key]; if (!n) return null
-          const col   = DOMAIN_COLOR[n.domain] || '#94a3b8'
-          const depth = info.minDepth === 1 ? 'direct' : `${info.minDepth} hops`
-          const pct   = Math.round(info.score * 100)
+          const n        = nm[key]; if (!n) return null
+          const col      = DOMAIN_COLOR[n.domain] || '#94a3b8'
+          const idx      = Math.round(info.score * 100)
+          const hopColor = info.minDepth === 1 ? '#00AEEF' : info.minDepth === 2 ? '#8b5cf6' : '#475569'
+          const hopLabel = info.minDepth === 1 ? '1 hop' : `${info.minDepth} hops`
           return (
             <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8,
               padding: '6px 0', borderBottom: '1px solid #0f172a' }}>
@@ -751,11 +777,15 @@ function InfluencePanel({ focalKey, nodes, influenceScores, narrative }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ color: '#f1f5f9', fontSize: 11, fontWeight: 600 }}>{n.name}</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3 }}>
-                  <div style={{ height: 3, borderRadius: 2, background: col, width: `${pct}%`, maxWidth: 80 }}/>
-                  <span style={{ color: '#64748b', fontSize: 9 }}>{depth}</span>
+                  <div style={{ height: 3, borderRadius: 2, background: col, width: `${idx}%`, maxWidth: 80 }}/>
+                  <span style={{ fontSize: 8, fontWeight: 700, padding: '1px 5px', borderRadius: 3,
+                    background: hopColor + '22', color: hopColor, border: `1px solid ${hopColor}44` }}>
+                    {hopLabel}
+                  </span>
                 </div>
               </div>
-              <span style={{ color: '#00AEEF', fontWeight: 700, fontSize: 12, flexShrink: 0 }}>{pct}%</span>
+              <span style={{ color: '#e2e8f0', fontWeight: 700, fontSize: 12, flexShrink: 0,
+                minWidth: 28, textAlign: 'right' }}>{idx}</span>
             </div>
           )
         })}
