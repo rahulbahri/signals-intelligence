@@ -1,14 +1,22 @@
-import { useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import {
   RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer,
-  LineChart, Line, AreaChart, Area,
+  LineChart, Line, AreaChart, Area, ReferenceLine, Tooltip,
 } from 'recharts'
 import {
   ChevronRight, Printer, TrendingUp, TrendingDown, Minus,
   AlertTriangle, CheckCircle2, Activity, Zap, Eye, Shield,
   Target, AlertCircle, BarChart3, Layers, ArrowUpRight,
-  ArrowDownRight, Info,
+  ArrowDownRight, Info, X, Maximize2, ExternalLink,
 } from 'lucide-react'
+
+// ── Slide-in animation ──────────────────────────────────────────────────────
+const PANEL_ANIM = `
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+`
 
 // ── Constants ───────────────────────────────────────────────────────────────
 const MONTHS     = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -21,7 +29,6 @@ const SOURCE = {
   projection:  { label: 'Bridge Analysis', color: '#d97706', text: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200'   },
 }
 
-// ── Domain keyword grouping ─────────────────────────────────────────────────
 const DOMAIN_MAP = {
   growth:      ['revenue', 'arr', 'mrr', 'growth', 'cac', 'ltv', 'pipeline', 'deal', 'win_rate', 'new_'],
   retention:   ['nrr', 'churn', 'retention', 'activation', 'nps', 'satisfaction', 'health', 'adoption', 'time_to_value', 'ttv'],
@@ -62,7 +69,7 @@ function gapPct(kpi) {
   return kpi.direction !== 'higher' ? -raw : raw
 }
 
-// ── Streak calculator ────────────────────────────────────────────────────────
+// ── Streak calculators ───────────────────────────────────────────────────────
 function cellStatus(val, target, direction) {
   if (val == null || !target) return 'grey'
   const r = direction === 'higher' ? val / target : target / val
@@ -89,7 +96,7 @@ function greenStreak(kpi) {
   return streak
 }
 
-// ── Sparkline data ───────────────────────────────────────────────────────────
+// ── Sparkline / chart data ───────────────────────────────────────────────────
 function sparkData(kpi) {
   return MONTH_NUMS.map((mo, idx) => {
     const m = kpi.monthly?.find(d => parseInt(d.period.split('-')[1], 10) === mo)
@@ -97,7 +104,7 @@ function sparkData(kpi) {
   })
 }
 
-// ── "So What" contextualiser ────────────────────────────────────────────────
+// ── "So What" contextualiser ─────────────────────────────────────────────────
 function soWhat(kpi) {
   const key  = (kpi.key || '').toLowerCase()
   const gap  = gapPct(kpi)
@@ -137,13 +144,28 @@ function soWhat(kpi) {
   return null
 }
 
-// ── Thesis sentence ──────────────────────────────────────────────────────────
+// ── Signal action items ──────────────────────────────────────────────────────
+function signalActions(signal) {
+  const t = signal.title?.toLowerCase() || ''
+  if (t.includes('streak') || t.includes('consecutive'))
+    return ['Request a root cause analysis with accountable owner', 'Set a 30-day milestone with a specific measurable outcome', 'Determine if this is cyclical or structural before escalating further']
+  if (t.includes('masking') || t.includes('retention'))
+    return ['Cross-reference NRR and churn trends with revenue data', 'Ask management to model the compounding impact over 3 quarters', 'Ensure retention KPIs are explicitly covered in the next board pack']
+  if (t.includes('green on paper') || t.includes('deteriorating'))
+    return ['Flag this KPI for monthly monitoring at executive level', 'Request the trailing 3-month trend to be reported alongside averages', 'Set an alert threshold before it crosses into amber']
+  if (t.includes('burn') || t.includes('efficiency'))
+    return ['Model the break-even growth rate at current burn', 'Ask management to present the path to self-funded growth', 'Stress-test runway against a growth slowdown scenario']
+  if (t.includes('clustered') || t.includes('simultaneously'))
+    return ['Identify the common upstream cause across all flagged KPIs', 'Assign a single accountable owner for the domain', 'Consider a focused operational review of this business area']
+  return ['Review with the responsible executive before next board session', 'Request a data-backed action plan with clear milestones']
+}
+
+// ── Thesis sentence ───────────────────────────────────────────────────────────
 function buildThesis(fingerprint, bhi) {
   if (!fingerprint?.length) return 'No data available.'
   const red    = fingerprint.filter(k => k.fy_status === 'red')
   const yellow = fingerprint.filter(k => k.fy_status === 'yellow')
   const green  = fingerprint.filter(k => k.fy_status === 'green')
-
   const hasRetentionRisk = fingerprint.some(k => {
     const key = (k.key || '').toLowerCase()
     return (key.includes('nrr') || key.includes('churn') || key.includes('retention')) && k.fy_status !== 'green'
@@ -153,7 +175,6 @@ function buildThesis(fingerprint, bhi) {
     return (key.includes('revenue') || key.includes('arr')) && k.fy_status === 'green'
   })
   const worstStreak = fingerprint.map(k => redStreak(k)).reduce((a,b) => Math.max(a,b), 0)
-
   if (bhi >= 80) {
     if (hasRetentionRisk)
       return `The business is performing strongly (BHI ${bhi}/100) but retention signals suggest the growth engine is not yet self-sustaining — a structural risk that will compound if not addressed.`
@@ -169,27 +190,14 @@ function buildThesis(fingerprint, bhi) {
   return `The business is under significant pressure (BHI ${bhi}/100) — ${red.length} critical KPI${red.length > 1 ? 's' : ''} and ${yellow.length} in the watch zone indicate systemic strain that demands board-level prioritisation.`
 }
 
-// ── Hidden signal detector ───────────────────────────────────────────────────
+// ── Hidden signal detector ────────────────────────────────────────────────────
 function detectSignals(fingerprint) {
   const signals = []
-
-  // 1. Consecutive red streak (structural)
-  const streakers = fingerprint
-    .map(k => ({ ...k, _streak: redStreak(k) }))
-    .filter(k => k._streak >= 3)
-    .sort((a, b) => b._streak - a._streak)
+  const streakers = fingerprint.map(k => ({ ...k, _streak: redStreak(k) })).filter(k => k._streak >= 3).sort((a, b) => b._streak - a._streak)
   if (streakers.length) {
     const k = streakers[0]
-    signals.push({
-      sev: 'critical',
-      icon: AlertCircle,
-      title: `${k.name} has missed target ${k._streak} consecutive months`,
-      body:  `A streak of ${k._streak} months indicates a structural failure, not a one-off miss. Sustained red streaks compound — each additional month makes recovery significantly harder. Escalate before this reaches a step-change inflection.`,
-      tab: 'fingerprint',
-    })
+    signals.push({ sev: 'critical', icon: AlertCircle, title: `${k.name} has missed target ${k._streak} consecutive months`, body: `A streak of ${k._streak} months indicates a structural failure, not a one-off miss. Sustained red streaks compound — each additional month makes recovery significantly harder. Escalate before this reaches a step-change inflection.`, tab: 'fingerprint' })
   }
-
-  // 2. Momentum trap — green status, falling trajectory
   const traps = fingerprint.filter(k => {
     if (k.fy_status !== 'green') return false
     const vals = (k.monthly || []).map(m => m.value).filter(v => v != null)
@@ -199,16 +207,8 @@ function detectSignals(fingerprint) {
   })
   if (traps.length) {
     const k = traps[0]
-    signals.push({
-      sev: 'warning',
-      icon: Eye,
-      title: `${k.name} is green on paper but the trend is deteriorating`,
-      body:  `The current average meets target, but the last 3 months show a consistent adverse trajectory. This is a leading indicator: if the trend continues unchecked, this KPI will breach the warning threshold within 1–2 quarters — the financials won't reflect this yet.`,
-      tab: 'trends',
-    })
+    signals.push({ sev: 'warning', icon: Eye, title: `${k.name} is green on paper but the trend is deteriorating`, body: `The current average meets target, but the last 3 months show a consistent adverse trajectory. This is a leading indicator: if the trend continues unchecked, this KPI will breach the warning threshold within 1–2 quarters — the financials won't reflect this yet.`, tab: 'trends' })
   }
-
-  // 3. Early recovery signal — underperforming but improving
   const recovering = fingerprint.filter(k => {
     if (k.fy_status === 'green') return false
     const vals = (k.monthly || []).map(m => m.value).filter(v => v != null)
@@ -218,131 +218,68 @@ function detectSignals(fingerprint) {
   })
   if (recovering.length) {
     const k = recovering[0]
-    signals.push({
-      sev: 'positive',
-      icon: TrendingUp,
-      title: `${k.name} is below target but showing genuine momentum`,
-      body:  `Despite missing its target, ${k.name} has improved consistently over the last 3 months. Early recovery signals in KPIs that have historically been leading indicators are worth monitoring — if sustained, this could represent a turning point.`,
-      tab: 'trends',
-    })
+    signals.push({ sev: 'positive', icon: TrendingUp, title: `${k.name} is below target but showing genuine momentum`, body: `Despite missing its target, ${k.name} has improved consistently over the last 3 months. Early recovery signals in KPIs that have historically been leading indicators are worth monitoring — if sustained, this could represent a turning point.`, tab: 'trends' })
   }
-
-  // 4. Growth-Retention mismatch (the hidden compounding risk)
-  const retentionKpis = fingerprint.filter(k => {
-    const key = (k.key || '').toLowerCase()
-    return key.includes('nrr') || key.includes('churn') || key.includes('retention') || key.includes('logo')
-  })
-  const growthKpis = fingerprint.filter(k => {
-    const key = (k.key || '').toLowerCase()
-    return key.includes('revenue') || key.includes('arr') || key.includes('mrr')
-  })
-  const retentionStressed = retentionKpis.some(k => k.fy_status !== 'green')
-  const growthHealthy = growthKpis.some(k => k.fy_status === 'green')
-  if (retentionStressed && growthHealthy && retentionKpis.length > 0) {
-    signals.push({
-      sev: 'warning',
-      icon: AlertTriangle,
-      title: 'Growth is masking a retention problem — the P&L hides this',
-      body:  'Top-line revenue looks healthy, but retention metrics are under stress. This divergence is a classic early warning: retention problems typically surface in the revenue line 2–3 quarters later, after churn compounds. Boards reviewing only the income statement will miss this signal entirely.',
-      tab: 'dashboard',
-    })
-  }
-
-  // 5. Burn vs growth efficiency mismatch
+  const retentionKpis = fingerprint.filter(k => { const key = (k.key || '').toLowerCase(); return key.includes('nrr') || key.includes('churn') || key.includes('retention') || key.includes('logo') })
+  const growthKpis = fingerprint.filter(k => { const key = (k.key || '').toLowerCase(); return key.includes('revenue') || key.includes('arr') || key.includes('mrr') })
+  if (retentionKpis.some(k => k.fy_status !== 'green') && growthKpis.some(k => k.fy_status === 'green') && retentionKpis.length > 0)
+    signals.push({ sev: 'warning', icon: AlertTriangle, title: 'Growth is masking a retention problem — the P&L hides this', body: 'Top-line revenue looks healthy, but retention metrics are under stress. This divergence is a classic early warning: retention problems typically surface in the revenue line 2–3 quarters later, after churn compounds. Boards reviewing only the income statement will miss this signal entirely.', tab: 'dashboard' })
   const burnKpi = fingerprint.find(k => (k.key || '').toLowerCase().includes('burn'))
-  const revKpi  = fingerprint.find(k => {
-    const key = (k.key || '').toLowerCase()
-    return (key.includes('revenue_growth') || key.includes('arr_growth')) && !key.includes('cac')
-  })
-  if (burnKpi && revKpi) {
-    const burnBad = burnKpi.fy_status !== 'green'
-    const revGood = revKpi.fy_status === 'green'
-    if (burnBad && revGood) {
-      signals.push({
-        sev: 'warning',
-        icon: Zap,
-        title: 'Revenue growth is being bought, not earned — watch the efficiency ratio',
-        body:  `Growth looks strong but Burn Multiple signals the current gains are capital-intensive. This is sustainable short-term but will face investor scrutiny at the next fundraise. The question is whether the growth will become self-funding before capital runs short.`,
-        tab: 'projection',
-      })
-    }
-  }
-
-  // 6. Clustered yellow warnings in one domain (systemic risk)
+  const revKpi  = fingerprint.find(k => { const key = (k.key || '').toLowerCase(); return (key.includes('revenue_growth') || key.includes('arr_growth')) && !key.includes('cac') })
+  if (burnKpi && revKpi && burnKpi.fy_status !== 'green' && revKpi.fy_status === 'green')
+    signals.push({ sev: 'warning', icon: Zap, title: 'Revenue growth is being bought, not earned — watch the efficiency ratio', body: `Growth looks strong but Burn Multiple signals the current gains are capital-intensive. This is sustainable short-term but will face investor scrutiny at the next fundraise. The question is whether the growth will become self-funding before capital runs short.`, tab: 'projection' })
   const byDomain = {}
-  fingerprint.forEach(k => {
-    const d = getDomain(k)
-    byDomain[d] = byDomain[d] || []
-    byDomain[d].push(k)
-  })
+  fingerprint.forEach(k => { const d = getDomain(k); byDomain[d] = byDomain[d] || []; byDomain[d].push(k) })
   for (const [domain, kpis] of Object.entries(byDomain)) {
     const yellows = kpis.filter(k => k.fy_status === 'yellow')
     if (yellows.length >= 2 && domain !== 'other') {
       const meta = DOMAIN_META[domain]
-      signals.push({
-        sev: 'warning',
-        icon: Info,
-        title: `${yellows.length} ${meta?.label || domain} metrics simultaneously in the warning zone`,
-        body:  `Clustered warnings within a single domain suggest a systemic constraint rather than isolated underperformance. When multiple KPIs in the same area miss together, the root cause is usually structural — a process, team, or market factor that individual KPI owners cannot solve in isolation.`,
-        tab: 'fingerprint',
-      })
+      signals.push({ sev: 'warning', icon: Info, title: `${yellows.length} ${meta?.label || domain} metrics simultaneously in the warning zone`, body: `Clustered warnings within a single domain suggest a systemic constraint rather than isolated underperformance. When multiple KPIs in the same area miss together, the root cause is usually structural — a process, team, or market factor that individual KPI owners cannot solve in isolation.`, tab: 'fingerprint' })
       break
     }
   }
-
   return signals.slice(0, 5)
 }
 
-// ── Domain story builder ─────────────────────────────────────────────────────
+// ── Domain story builder ──────────────────────────────────────────────────────
 function buildDomainStory(domain, kpis) {
   if (!kpis.length) return null
   const red    = kpis.filter(k => k.fy_status === 'red')
   const yellow = kpis.filter(k => k.fy_status === 'yellow')
   const green  = kpis.filter(k => k.fy_status === 'green')
-
   const stories = {
     growth: () => {
-      if (green.length === kpis.length)
-        return `Growth metrics are firing on all cylinders — ${kpis.length}/${kpis.length} KPIs on target. Top-line momentum is genuine and broad-based, not concentrated in a single metric. The pipeline and conversion economics support continued expansion.`
-      if (red.length >= kpis.length / 2)
-        return `Growth is under significant strain — ${red.length} of ${kpis.length} KPIs are critical. The growth engine is constrained; without intervention, the gap between current trajectory and targets will widen. Diagnose whether this is a pipeline, conversion, or retention issue.`
+      if (green.length === kpis.length) return `Growth metrics are firing on all cylinders — ${kpis.length}/${kpis.length} KPIs on target. Top-line momentum is genuine and broad-based, not concentrated in a single metric. The pipeline and conversion economics support continued expansion.`
+      if (red.length >= kpis.length / 2) return `Growth is under significant strain — ${red.length} of ${kpis.length} KPIs are critical. The growth engine is constrained; without intervention, the gap between current trajectory and targets will widen. Diagnose whether this is a pipeline, conversion, or retention issue.`
       return `Growth presents a mixed picture: ${green.length} KPIs on track, but ${red.length + yellow.length} are dragging the aggregate. The growth engine has the right components but isn't firing consistently — focus effort on the highest-leverage bottleneck, not the longest list of issues.`
     },
     retention: () => {
-      if (red.length === 0 && yellow.length === 0)
-        return `Retention health is genuinely strong — the customer base is stable and expanding. Strong NRR dynamics mean existing customers are funding a portion of growth, reducing reliance on new sales and compressing the effective CAC.`
-      if (red.length > 0)
-        return `Retention is the most consequential risk in this dataset. ${red.length} KPI${red.length > 1 ? 's are' : ' is'} critical, and churn dynamics at this level will compound against revenue within 2–3 quarters. A 1% improvement in monthly churn has a larger NPV impact than most growth initiatives.`
+      if (red.length === 0 && yellow.length === 0) return `Retention health is genuinely strong — the customer base is stable and expanding. Strong NRR dynamics mean existing customers are funding a portion of growth, reducing reliance on new sales and compressing the effective CAC.`
+      if (red.length > 0) return `Retention is the most consequential risk in this dataset. ${red.length} KPI${red.length > 1 ? 's are' : ' is'} critical, and churn dynamics at this level will compound against revenue within 2–3 quarters. A 1% improvement in monthly churn has a larger NPV impact than most growth initiatives.`
       return `Retention is in the watch zone — no critical failures yet, but ${yellow.length} metric${yellow.length > 1 ? 's are' : ' is'} trending adversely. Proactive intervention at the watch stage costs a fraction of what remediation costs once customers begin churning. The window to act is now.`
     },
     efficiency: () => {
-      if (green.length === kpis.length)
-        return `Operational efficiency is a demonstrable strength. The business generates output at or above target relative to its cost structure — this creates operating leverage that becomes increasingly valuable as scale increases.`
-      if (red.length > 0)
-        return `Efficiency metrics signal that costs are growing faster than the value they generate. ${red.length} KPI${red.length > 1 ? 's need' : ' needs'} structural intervention — incremental optimisation will not close the gap. Review the cost architecture at the program level, not the line item level.`
+      if (green.length === kpis.length) return `Operational efficiency is a demonstrable strength. The business generates output at or above target relative to its cost structure — this creates operating leverage that becomes increasingly valuable as scale increases.`
+      if (red.length > 0) return `Efficiency metrics signal that costs are growing faster than the value they generate. ${red.length} KPI${red.length > 1 ? 's need' : ' needs'} structural intervention — incremental optimisation will not close the gap. Review the cost architecture at the program level, not the line item level.`
       return `Efficiency is in transition. The operating model has the right structure but margins and burn aren't improving at the rate expected at this growth stage. The operating leverage story needs to be built deliberately — it typically doesn't emerge without intentional choices.`
     },
     cashflow: () => {
-      if (green.length === kpis.length)
-        return `Cash position is healthy and the trajectory is positive. Strong runway and cash generation give the business the strategic flexibility to pursue growth without short-term capital pressure — a significant strategic advantage.`
-      if (red.length > 0)
-        return `Cash dynamics are a board-level concern requiring direct attention. ${red.length} KPI${red.length > 1 ? 's require' : ' requires'} immediate review — runway and free cash generation should be stress-tested against multiple scenarios at the next board session.`
+      if (green.length === kpis.length) return `Cash position is healthy and the trajectory is positive. Strong runway and cash generation give the business the strategic flexibility to pursue growth without short-term capital pressure — a significant strategic advantage.`
+      if (red.length > 0) return `Cash dynamics are a board-level concern requiring direct attention. ${red.length} KPI${red.length > 1 ? 's require' : ' requires'} immediate review — runway and free cash generation should be stress-tested against multiple scenarios at the next board session.`
       return `Cash generation is adequate but the trajectory warrants monitoring. Key metrics are in the yellow zone — not critical, but the margin of safety is narrowing. Revisit budget assumptions and ensure contingency plans are current.`
     },
     other: () => `${kpis.length} additional KPIs tracked: ${green.length} on target, ${yellow.length} watch, ${red.length} critical.`,
   }
-
   const story = (stories[domain] || stories.other)()
   return { story, red, yellow, green }
 }
 
-// ── Outlook generator ────────────────────────────────────────────────────────
+// ── Outlook generator ─────────────────────────────────────────────────────────
 function buildOutlook(fingerprint, bridgeData) {
   const bullets = []
   const streakers = fingerprint.filter(k => redStreak(k) >= 3).sort((a,b) => redStreak(b)-redStreak(a))
   if (streakers.length)
     bullets.push(`Monitor ${streakers[0].name} closely — a ${redStreak(streakers[0])}-month red streak is the highest-priority operational risk.`)
-
   const traps = fingerprint.filter(k => {
     if (k.fy_status !== 'green') return false
     const vals = (k.monthly || []).map(m => m.value).filter(v => v != null)
@@ -352,32 +289,26 @@ function buildOutlook(fingerprint, bridgeData) {
   })
   if (traps.length)
     bullets.push(`${traps[0].name} will likely move from green to amber within 60–90 days if the current declining trajectory is not reversed.`)
-
   const redKpis = fingerprint.filter(k => k.fy_status === 'red')
   if (redKpis.length >= 3)
     bullets.push(`With ${redKpis.length} critical KPIs, the board should request a corrective action plan with accountable owners and measurable 30-day milestones — not just an update.`)
-
   if (bridgeData?.summary?.behind > 0)
     bullets.push(`${bridgeData.summary.behind} KPI${bridgeData.summary.behind > 1 ? 's are' : ' is'} behind projection — if not addressed, the annual plan may need to be re-baselined before Q3.`)
-
   const greenKpis = fingerprint.filter(k => k.fy_status === 'green')
   if (greenKpis.length > 0 && redKpis.length > 0)
     bullets.push(`Protect the ${greenKpis.length} on-target KPIs from resource diversion toward problem areas — over-correction is a common board intervention failure mode.`)
-
   if (!bullets.length)
     bullets.push('Continue monitoring the current KPI set — no acute risks detected at this time.')
-
   return bullets.slice(0, 4)
 }
 
-// ── VS-Target helper ─────────────────────────────────────────────────────────
 function vsTarget(kpi) {
   if (!kpi.target) return 100
   const r = kpi.direction === 'higher' ? kpi.avg / kpi.target : kpi.target / kpi.avg
   return Math.min(Math.round(r * 100), 140)
 }
 
-// ── Sub-components ───────────────────────────────────────────────────────────
+// ── Shared sub-components ─────────────────────────────────────────────────────
 
 function NavPill({ tabId, onNavigate }) {
   const src = SOURCE[tabId]
@@ -391,18 +322,355 @@ function NavPill({ tabId, onNavigate }) {
   )
 }
 
-// Signal card severity styles
-const SEV = {
-  critical: { bg: 'bg-red-50',     border: 'border-red-200',   icon: 'text-red-500',   bar: '#ef4444', badge: 'bg-red-100 text-red-700 border-red-200',    label: 'CRITICAL' },
-  warning:  { bg: 'bg-amber-50',   border: 'border-amber-200', icon: 'text-amber-500', bar: '#f59e0b', badge: 'bg-amber-100 text-amber-700 border-amber-200', label: 'WATCH'    },
-  positive: { bg: 'bg-emerald-50', border: 'border-emerald-200', icon: 'text-emerald-500', bar: '#10b981', badge: 'bg-emerald-100 text-emerald-700 border-emerald-200', label: 'SIGNAL' },
+function ExpandBtn({ onClick }) {
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); onClick() }}
+      className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-lg bg-slate-50 border border-slate-200 text-slate-400 hover:bg-slate-100 hover:text-slate-600 hover:border-slate-300 transition-all"
+      title="Open detail view">
+      <Maximize2 size={11}/>
+    </button>
+  )
 }
 
-function HiddenSignalCard({ signal, onNavigate }) {
-  const s = SEV[signal.sev] || SEV.warning
+// ── SIDE PANEL ────────────────────────────────────────────────────────────────
+
+function KpiDetailPanel({ kpi, onNavigate, onClose }) {
+  const st      = kpi.fy_status || 'grey'
+  const gap     = gapPct(kpi)
+  const rs      = redStreak(kpi)
+  const gs      = greenStreak(kpi)
+  const sw      = soWhat(kpi)
+  const domain  = getDomain(kpi)
+  const dmeta   = DOMAIN_META[domain] || DOMAIN_META.other
+  const DIcon   = dmeta.Icon
+  const data    = sparkData(kpi)
+  const stColor = st === 'red' ? '#ef4444' : st === 'yellow' ? '#f59e0b' : st === 'green' ? '#059669' : '#94a3b8'
+  const stLabel = st === 'red' ? 'Critical' : st === 'yellow' ? 'Watch' : st === 'green' ? 'On Target' : 'No Data'
+  const trendVals = (kpi.monthly || []).map(m => m.value).filter(v => v != null)
+  const trendDir  = trendVals.length >= 2
+    ? (trendVals.at(-1) > trendVals[0] ? 'up' : trendVals.at(-1) < trendVals[0] ? 'down' : 'flat')
+    : 'flat'
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="flex items-start justify-between p-5 border-b border-slate-100 sticky top-0 bg-white z-10">
+        <div className="flex-1 min-w-0 pr-3">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{ background: dmeta.bg, color: dmeta.color, border: `1px solid ${dmeta.color}30` }}>
+              <DIcon size={9}/> {dmeta.label}
+            </span>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border"
+              style={{ background: stColor + '15', color: stColor, borderColor: stColor + '40' }}>
+              {stLabel}
+            </span>
+          </div>
+          <h2 className="text-[17px] font-black text-slate-800 leading-snug">{kpi.name}</h2>
+        </div>
+        <button onClick={onClose} className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 transition-colors">
+          <X size={14}/>
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-5 space-y-5">
+
+        {/* Value / Target / Gap */}
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: 'Current',  value: fmt(kpi.avg, kpi.unit),    color: stColor },
+            { label: 'Target',   value: fmt(kpi.target, kpi.unit), color: '#64748b' },
+            { label: 'Gap',      value: gap != null ? `${gap > 0 ? '+' : ''}${gap.toFixed(1)}%` : '—', color: gap == null ? '#94a3b8' : gap >= 0 ? '#059669' : '#ef4444' },
+          ].map(c => (
+            <div key={c.label} className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-center">
+              <div className="text-[18px] font-black leading-none mb-1" style={{ color: c.color }}>{c.value}</div>
+              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{c.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* 12-month chart */}
+        <div>
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">12-Month Trend</div>
+          <div className="bg-slate-50 rounded-xl border border-slate-100 p-3">
+            <ResponsiveContainer width="100%" height={130}>
+              <AreaChart data={data} margin={{ top: 6, right: 6, bottom: 0, left: 0 }}>
+                <defs>
+                  <linearGradient id={`grad-${kpi.key}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor={stColor} stopOpacity={0.25}/>
+                    <stop offset="95%" stopColor={stColor} stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                {kpi.target && <ReferenceLine y={kpi.target} stroke="#cbd5e1" strokeDasharray="4 3" strokeWidth={1}/>}
+                <Tooltip
+                  contentStyle={{ background: '#1e293b', border: 'none', borderRadius: 8, fontSize: 11, color: '#f1f5f9', padding: '6px 10px' }}
+                  formatter={v => [fmt(v, kpi.unit), kpi.name]}
+                  labelStyle={{ color: '#94a3b8', fontSize: 10 }}
+                />
+                <Area type="monotone" dataKey="value" stroke={stColor} strokeWidth={2}
+                  fill={`url(#grad-${kpi.key})`} dot={false} connectNulls/>
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Monthly pills */}
+        <div>
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Monthly Status</div>
+          <div className="grid grid-cols-6 gap-1.5">
+            {MONTHS.map((mo, idx) => {
+              const m  = kpi.monthly?.find(d => parseInt(d.period.split('-')[1], 10) === idx + 1)
+              const s  = cellStatus(m?.value, kpi.target, kpi.direction)
+              const bg = s === 'green' ? '#f0fdf4' : s === 'yellow' ? '#fffbeb' : s === 'red' ? '#fef2f2' : '#f8fafc'
+              const tc = s === 'green' ? '#059669' : s === 'yellow' ? '#d97706' : s === 'red' ? '#dc2626' : '#94a3b8'
+              const bc = s === 'green' ? '#bbf7d0' : s === 'yellow' ? '#fde68a' : s === 'red' ? '#fecaca' : '#e2e8f0'
+              return (
+                <div key={mo} className="rounded-lg border text-center py-1.5 px-1" style={{ background: bg, borderColor: bc }}>
+                  <div className="text-[8px] font-bold" style={{ color: tc }}>{mo}</div>
+                  <div className="text-[9px] font-black" style={{ color: tc }}>
+                    {m?.value != null ? fmt(m.value, kpi.unit) : '—'}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Streak */}
+        {(rs > 0 || gs > 0) && (
+          <div className="flex gap-3">
+            {rs > 0 && (
+              <div className="flex-1 rounded-xl bg-red-50 border border-red-100 p-3 text-center">
+                <div className="flex items-center justify-center gap-1 mb-1">
+                  {rs >= 3 && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"/>}
+                  <span className="text-[20px] font-black text-red-600">{rs}</span>
+                </div>
+                <div className="text-[9px] font-bold text-red-400 uppercase">Consecutive Misses</div>
+              </div>
+            )}
+            {gs > 0 && (
+              <div className="flex-1 rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-center">
+                <div className="text-[20px] font-black text-emerald-600 mb-1">{gs}</div>
+                <div className="text-[9px] font-bold text-emerald-400 uppercase">Consecutive On-Target</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* So what */}
+        {sw && (
+          <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Why this matters</div>
+            <p className="text-[13px] text-slate-700 leading-relaxed">{sw}</p>
+          </div>
+        )}
+
+        {/* Nav pills */}
+        <div>
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">View in full context</div>
+          <div className="flex flex-wrap gap-2">
+            <NavPill tabId="dashboard" onNavigate={onNavigate}/>
+            <NavPill tabId="trends" onNavigate={onNavigate}/>
+            <NavPill tabId="fingerprint" onNavigate={onNavigate}/>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SignalDetailPanel({ signal, onNavigate, onClose }) {
+  const s       = { critical: { bg: '#fef2f2', bar: '#ef4444', badge: '#fca5a5', label: 'CRITICAL', tc: '#dc2626' }, warning: { bg: '#fffbeb', bar: '#f59e0b', badge: '#fde68a', label: 'WATCH', tc: '#d97706' }, positive: { bg: '#f0fdf4', bar: '#10b981', badge: '#bbf7d0', label: 'SIGNAL', tc: '#059669' } }[signal.sev] || {}
+  const Icon    = signal.icon
+  const actions = signalActions(signal)
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-start justify-between p-5 border-b border-slate-100 sticky top-0 bg-white z-10">
+        <div className="flex-1 min-w-0 pr-3">
+          <span className="inline-block text-[9px] font-black px-2 py-0.5 rounded-full border mb-2"
+            style={{ background: s.bg, color: s.tc, borderColor: s.badge }}>
+            {s.label}
+          </span>
+          <h2 className="text-[15px] font-black text-slate-800 leading-snug">{signal.title}</h2>
+        </div>
+        <button onClick={onClose} className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 transition-colors">
+          <X size={14}/>
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-5 space-y-5">
+        {/* Severity strip + icon */}
+        <div className="rounded-xl border p-4 flex items-start gap-3" style={{ background: s.bg, borderColor: s.badge }}>
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ background: s.bar + '25' }}>
+            <Icon size={18} style={{ color: s.bar }}/>
+          </div>
+          <p className="text-[13px] text-slate-700 leading-relaxed">{signal.body}</p>
+        </div>
+
+        {/* Recommended actions */}
+        <div>
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2.5">Recommended Board Actions</div>
+          <div className="space-y-2">
+            {actions.map((a, i) => (
+              <div key={i} className="flex items-start gap-2.5 rounded-xl bg-slate-50 border border-slate-100 p-3">
+                <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 bg-slate-200">
+                  <span className="text-[9px] font-black text-slate-500">{i + 1}</span>
+                </div>
+                <p className="text-[12px] text-slate-700 leading-relaxed">{a}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Nav */}
+        <div>
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">View source data</div>
+          <NavPill tabId={signal.tab} onNavigate={onNavigate}/>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DomainDetailPanel({ domain, kpis, onNavigate, onClose }) {
+  const meta   = DOMAIN_META[domain] || DOMAIN_META.other
+  const Icon   = meta.Icon
+  const result = buildDomainStory(domain, kpis)
+  const { story, red, yellow, green } = result || { story: '', red: [], yellow: [], green: [] }
+  const healthPct = kpis.length ? Math.round((green.length * 100 + yellow.length * 55) / kpis.length) : 0
+  const sorted = [...red, ...yellow, ...green]
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-start justify-between p-5 border-b border-slate-100 sticky top-0 bg-white z-10">
+        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ background: meta.bg }}>
+            <Icon size={16} style={{ color: meta.color }}/>
+          </div>
+          <div>
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Domain Detail</div>
+            <h2 className="text-[16px] font-black text-slate-800 leading-tight">{meta.label}</h2>
+          </div>
+        </div>
+        <button onClick={onClose} className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 transition-colors">
+          <X size={14}/>
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-5 space-y-5">
+        {/* Health score */}
+        <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-bold text-slate-500">Domain Health Score</span>
+            <span className="text-[20px] font-black" style={{ color: meta.color }}>{healthPct}%</span>
+          </div>
+          <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+            <div className="h-full rounded-full" style={{ width: `${healthPct}%`, background: meta.color }}/>
+          </div>
+          <div className="flex gap-3 mt-2">
+            {red.length > 0    && <span className="text-[10px] font-bold text-red-500">{red.length} critical</span>}
+            {yellow.length > 0 && <span className="text-[10px] font-bold text-amber-500">{yellow.length} watch</span>}
+            {green.length > 0  && <span className="text-[10px] font-bold text-emerald-500">{green.length} on target</span>}
+          </div>
+        </div>
+
+        {/* Narrative */}
+        {story && (
+          <div className="rounded-xl p-4" style={{ background: meta.bg, border: `1px solid ${meta.color}20` }}>
+            <div className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: meta.color }}>Domain Signal</div>
+            <p className="text-[13px] text-slate-700 leading-relaxed">{story}</p>
+          </div>
+        )}
+
+        {/* KPI list */}
+        <div>
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">{kpis.length} KPIs in this domain</div>
+          <div className="space-y-2">
+            {sorted.map(kpi => {
+              const st    = kpi.fy_status || 'grey'
+              const gap   = gapPct(kpi)
+              const color = st === 'red' ? '#ef4444' : st === 'yellow' ? '#f59e0b' : st === 'green' ? '#059669' : '#94a3b8'
+              const bg    = st === 'red' ? '#fef2f2' : st === 'yellow' ? '#fffbeb' : st === 'green' ? '#f0fdf4' : '#f8fafc'
+              const bc    = st === 'red' ? '#fecaca' : st === 'yellow' ? '#fde68a' : st === 'green' ? '#bbf7d0' : '#e2e8f0'
+              const data  = sparkData(kpi)
+              return (
+                <div key={kpi.key} className="flex items-center gap-3 rounded-xl border p-3"
+                  style={{ background: bg, borderColor: bc }}>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] font-bold text-slate-700 truncate">{kpi.name}</div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="font-mono text-[11px] font-bold" style={{ color }}>{fmt(kpi.avg, kpi.unit)}</span>
+                      {gap != null && <span className="text-[10px] font-bold" style={{ color }}>{gap > 0 ? '+' : ''}{gap.toFixed(1)}%</span>}
+                    </div>
+                  </div>
+                  <div className="w-20 h-8 flex-shrink-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+                        <Line type="monotone" dataKey="value" stroke={color} strokeWidth={1.5} dot={false} connectNulls/>
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Nav */}
+        <div>
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">View in full context</div>
+          <div className="flex flex-wrap gap-2">
+            <NavPill tabId="trends" onNavigate={onNavigate}/>
+            <NavPill tabId="fingerprint" onNavigate={onNavigate}/>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SidePanel({ card, fingerprint, onNavigate, onClose }) {
+  if (!card) return null
+  return (
+    <>
+      <style>{PANEL_ANIM}</style>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-[2px]"
+        onClick={onClose}
+      />
+      {/* Panel */}
+      <div
+        className="fixed right-0 top-0 h-full bg-white shadow-2xl z-50 overflow-hidden flex flex-col"
+        style={{ width: 'min(440px, 95vw)', animation: 'slideInRight 0.22s ease-out' }}>
+        {card.type === 'kpi'    && <KpiDetailPanel    kpi={card.kpi}       onNavigate={onNavigate} onClose={onClose}/>}
+        {card.type === 'signal' && <SignalDetailPanel  signal={card.signal} onNavigate={onNavigate} onClose={onClose}/>}
+        {card.type === 'domain' && <DomainDetailPanel  domain={card.domain} kpis={card.kpis} onNavigate={onNavigate} onClose={onClose}/>}
+      </div>
+    </>
+  )
+}
+
+// ── Severity styles ───────────────────────────────────────────────────────────
+const SEV = {
+  critical: { bg: 'bg-red-50',     border: 'border-red-200',   icon: 'text-red-500',   bar: '#ef4444', badge: 'bg-red-100 text-red-700 border-red-200',    label: 'CRITICAL',  hover: 'hover:shadow-[0_8px_30px_rgba(239,68,68,0.18)]' },
+  warning:  { bg: 'bg-amber-50',   border: 'border-amber-200', icon: 'text-amber-500', bar: '#f59e0b', badge: 'bg-amber-100 text-amber-700 border-amber-200', label: 'WATCH',   hover: 'hover:shadow-[0_8px_30px_rgba(245,158,11,0.18)]' },
+  positive: { bg: 'bg-emerald-50', border: 'border-emerald-200', icon: 'text-emerald-500', bar: '#10b981', badge: 'bg-emerald-100 text-emerald-700 border-emerald-200', label: 'SIGNAL', hover: 'hover:shadow-[0_8px_30px_rgba(16,185,129,0.18)]' },
+}
+
+// ── Card components ───────────────────────────────────────────────────────────
+
+function HiddenSignalCard({ signal, onNavigate, onExpand }) {
+  const s    = SEV[signal.sev] || SEV.warning
   const Icon = signal.icon
   return (
-    <div className={`rounded-2xl border ${s.border} ${s.bg} overflow-hidden flex flex-col`}>
+    <div
+      className={`rounded-2xl border ${s.border} ${s.bg} overflow-hidden flex flex-col cursor-pointer group transition-all duration-200 ${s.hover} hover:-translate-y-0.5`}
+      onClick={() => onExpand({ type: 'signal', signal })}>
       <div style={{ height: 3, background: s.bar }}/>
       <div className="p-4 flex-1 flex flex-col gap-2.5">
         <div className="flex items-start gap-2.5">
@@ -413,17 +681,19 @@ function HiddenSignalCard({ signal, onNavigate }) {
             </div>
             <p className="text-[13px] font-bold text-slate-800 leading-snug">{signal.title}</p>
           </div>
+          <ExpandBtn onClick={() => onExpand({ type: 'signal', signal })}/>
         </div>
-        <p className="text-[11px] text-slate-500 leading-relaxed flex-1">{signal.body}</p>
-        <div className="pt-1">
+        <p className="text-[11px] text-slate-500 leading-relaxed flex-1 line-clamp-3">{signal.body}</p>
+        <div className="flex items-center justify-between pt-1">
           <NavPill tabId={signal.tab} onNavigate={onNavigate}/>
+          <span className="text-[10px] text-slate-300 group-hover:text-slate-400 transition-colors">Tap to expand →</span>
         </div>
       </div>
     </div>
   )
 }
 
-function KpiStatusRow({ kpi, rank, onNavigate }) {
+function KpiStatusRow({ kpi, rank, onNavigate, onExpand }) {
   const st     = kpi.fy_status || 'grey'
   const gap    = gapPct(kpi)
   const streak = redStreak(kpi)
@@ -438,10 +708,12 @@ function KpiStatusRow({ kpi, rank, onNavigate }) {
     ? kpi.direction !== 'higher'
     : null
   const data = sparkData(kpi)
+  const stColor = st === 'red' ? '#ef4444' : st === 'yellow' ? '#f59e0b' : '#10b981'
 
   return (
-    <div className="rounded-xl border border-slate-100 bg-white hover:shadow-sm hover:border-slate-200 transition-all p-3.5 flex flex-col gap-2">
-      {/* Row 1: number + name + badges */}
+    <div
+      className="rounded-xl border border-slate-100 bg-white hover:shadow-[0_6px_24px_rgba(0,0,0,0.10)] hover:border-slate-200 hover:-translate-y-0.5 transition-all duration-200 p-3.5 flex flex-col gap-2 cursor-pointer group"
+      onClick={() => onExpand({ type: 'kpi', kpi })}>
       <div className="flex items-start gap-2.5">
         <span className="text-slate-300 font-mono text-[11px] w-4 text-center flex-shrink-0 mt-0.5">{rank}</span>
         <div className="flex-1 min-w-0">
@@ -454,12 +726,9 @@ function KpiStatusRow({ kpi, rank, onNavigate }) {
               </span>
             )}
           </div>
-          {/* Row 2: value + target + gap */}
           <div className="flex items-center gap-3 mt-0.5 flex-wrap">
             <span className="text-[12px] font-mono font-bold text-slate-700">{fmt(kpi.avg, kpi.unit)}</span>
-            {kpi.target && (
-              <span className="text-[11px] text-slate-400">tgt {fmt(kpi.target, kpi.unit)}</span>
-            )}
+            {kpi.target && <span className="text-[11px] text-slate-400">tgt {fmt(kpi.target, kpi.unit)}</span>}
             {gap != null && (
               <span className={`text-[11px] font-bold ${gap >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                 {gap > 0 ? '+' : ''}{gap.toFixed(1)}%
@@ -470,20 +739,18 @@ function KpiStatusRow({ kpi, rank, onNavigate }) {
             {trendDir === 'flat' && <Minus         size={11} className="text-slate-300"/>}
           </div>
         </div>
-        {/* Mini sparkline */}
+        {/* Sparkline */}
         <div className="flex-shrink-0 w-16 h-8">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
-              <Line type="monotone" dataKey="value"
-                stroke={st === 'red' ? '#ef4444' : st === 'yellow' ? '#f59e0b' : '#10b981'}
-                strokeWidth={1.5} dot={false} connectNulls/>
+              <Line type="monotone" dataKey="value" stroke={stColor} strokeWidth={1.5} dot={false} connectNulls/>
             </LineChart>
           </ResponsiveContainer>
         </div>
+        <ExpandBtn onClick={() => onExpand({ type: 'kpi', kpi })}/>
       </div>
-      {/* "So what" */}
       {sw && (
-        <p className="text-[11px] text-slate-500 leading-snug border-t border-slate-50 pt-1.5 italic">
+        <p className="text-[11px] text-slate-400 leading-snug border-t border-slate-50 pt-1.5 italic group-hover:text-slate-500 transition-colors">
           {sw}
         </p>
       )}
@@ -491,7 +758,7 @@ function KpiStatusRow({ kpi, rank, onNavigate }) {
   )
 }
 
-function DomainStoryCard({ domain, kpis, onNavigate }) {
+function DomainStoryCard({ domain, kpis, onNavigate, onExpand }) {
   const meta   = DOMAIN_META[domain] || DOMAIN_META.other
   const result = buildDomainStory(domain, kpis)
   if (!result) return null
@@ -499,21 +766,22 @@ function DomainStoryCard({ domain, kpis, onNavigate }) {
   const Icon = meta.Icon
   const total = kpis.length
   const healthPct = total ? Math.round((green.length * 100 + yellow.length * 55) / total) : 0
-
-  // Top 2 KPIs for sparklines (worst first)
   const spotlightKpis = [...red, ...yellow, ...green].slice(0, 2)
+  const shadowColor = meta.color + '28'
 
   return (
-    <div className="rounded-2xl border border-slate-200 overflow-hidden bg-white hover:shadow-md transition-all flex flex-col cursor-pointer"
-      onClick={() => onNavigate('trends')}>
-      {/* top stripe */}
-      <div style={{ height: 3, background: meta.color }}/>
+    <div
+      className="rounded-2xl border border-slate-200 overflow-hidden bg-white flex flex-col cursor-pointer group transition-all duration-200 hover:-translate-y-0.5"
+      style={{ '--hover-shadow': `0 8px 32px ${shadowColor}` }}
+      onMouseEnter={e => e.currentTarget.style.boxShadow = `0 8px 32px ${shadowColor}`}
+      onMouseLeave={e => e.currentTarget.style.boxShadow = ''}
+      onClick={() => onExpand({ type: 'domain', domain, kpis })}>
+      <div style={{ height: 4, background: meta.color }}/>
       <div className="p-5 flex flex-col gap-3 flex-1">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-              style={{ background: meta.bg }}>
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: meta.bg }}>
               <Icon size={14} style={{ color: meta.color }}/>
             </div>
             <span className="text-[12px] font-black text-slate-700 uppercase tracking-wide">{meta.label}</span>
@@ -522,6 +790,7 @@ function DomainStoryCard({ domain, kpis, onNavigate }) {
             {red.length > 0    && <span className="text-[9px] font-bold bg-red-50 border border-red-200 text-red-600 px-1.5 py-0.5 rounded-full">{red.length} critical</span>}
             {yellow.length > 0 && <span className="text-[9px] font-bold bg-amber-50 border border-amber-200 text-amber-600 px-1.5 py-0.5 rounded-full">{yellow.length} watch</span>}
             {red.length === 0 && yellow.length === 0 && <span className="text-[9px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-600 px-1.5 py-0.5 rounded-full">all on target</span>}
+            <ExpandBtn onClick={() => onExpand({ type: 'domain', domain, kpis })}/>
           </div>
         </div>
 
@@ -539,7 +808,7 @@ function DomainStoryCard({ domain, kpis, onNavigate }) {
         {/* Narrative */}
         <p className="text-[12px] text-slate-600 leading-relaxed flex-1">{story}</p>
 
-        {/* Sparklines for spotlight KPIs */}
+        {/* Sparklines */}
         {spotlightKpis.length > 0 && (
           <div className="flex gap-3 pt-1 border-t border-slate-50">
             {spotlightKpis.map(kpi => {
@@ -548,19 +817,11 @@ function DomainStoryCard({ domain, kpis, onNavigate }) {
               const lcolor = st === 'red' ? '#ef4444' : st === 'yellow' ? '#f59e0b' : '#10b981'
               return (
                 <div key={kpi.key} className="flex-1 min-w-0">
-                  <div className="text-[10px] text-slate-400 font-medium truncate">{kpi.name}</div>
-                  <div className="text-[11px] font-bold" style={{ color: lcolor }}>{fmt(kpi.avg, kpi.unit)}</div>
-                  <ResponsiveContainer width="100%" height={28}>
-                    <AreaChart data={data} margin={{ top: 2, right: 1, bottom: 2, left: 1 }}>
-                      <defs>
-                        <linearGradient id={`g-${kpi.key}`} x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%"   stopColor={lcolor} stopOpacity={0.25}/>
-                          <stop offset="100%" stopColor={lcolor} stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <Area type="monotone" dataKey="value" stroke={lcolor} strokeWidth={1.5}
-                        fill={`url(#g-${kpi.key})`} dot={false} connectNulls/>
-                    </AreaChart>
+                  <div className="text-[9px] font-semibold text-slate-500 truncate mb-1">{kpi.name}</div>
+                  <ResponsiveContainer width="100%" height={32}>
+                    <LineChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+                      <Line type="monotone" dataKey="value" stroke={lcolor} strokeWidth={1.5} dot={false} connectNulls/>
+                    </LineChart>
                   </ResponsiveContainer>
                 </div>
               )
@@ -568,16 +829,19 @@ function DomainStoryCard({ domain, kpis, onNavigate }) {
           </div>
         )}
 
-        <div className="flex items-center gap-1 text-[10px] font-semibold text-slate-400 hover:text-slate-600 transition-colors">
-          Deep dive <ChevronRight size={10}/>
+        {/* Footer */}
+        <div className="flex items-center justify-between pt-1">
+          <NavPill tabId="trends" onNavigate={onNavigate}/>
+          <span className="text-[10px] text-slate-300 group-hover:text-slate-400 transition-colors">Tap to expand →</span>
         </div>
       </div>
     </div>
   )
 }
 
-// ── Main component ───────────────────────────────────────────────────────────
+// ── MAIN COMPONENT ────────────────────────────────────────────────────────────
 export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
+  const [sideCard, setSideCard] = useState(null)
   const dateStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
 
   if (!fingerprint?.length) {
@@ -591,7 +855,7 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
     )
   }
 
-  // ── Derived ────────────────────────────────────────────────────────────────
+  // ── Derived ──────────────────────────────────────────────────────────────
   const greenKpis  = fingerprint.filter(k => k.fy_status === 'green')
   const yellowKpis = fingerprint.filter(k => k.fy_status === 'yellow')
   const redKpis    = fingerprint.filter(k => k.fy_status === 'red')
@@ -604,7 +868,6 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
   const signals = useMemo(() => detectSignals(fingerprint), [fingerprint])
   const outlook = useMemo(() => buildOutlook(fingerprint, bridgeData), [fingerprint, bridgeData])
 
-  // Domain groups (excluding 'other' from stories if too small)
   const domainGroups = useMemo(() => {
     const groups = {}
     fingerprint.forEach(k => {
@@ -615,52 +878,34 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
     return groups
   }, [fingerprint])
 
-  const storyDomains = ['growth', 'retention', 'efficiency', 'cashflow']
-    .filter(d => (domainGroups[d]?.length || 0) >= 1)
+  const storyDomains = ['growth', 'retention', 'efficiency', 'cashflow'].filter(d => (domainGroups[d]?.length || 0) >= 1)
 
-  // Sorted risk list
   const atRisk = [...redKpis, ...yellowKpis].sort((a, b) => {
     if ((a.fy_status === 'red') !== (b.fy_status === 'red')) return a.fy_status === 'red' ? -1 : 1
     return Math.abs(gapPct(b) || 0) - Math.abs(gapPct(a) || 0)
   })
 
-  // Radar data
-  const radarData = fingerprint
-    .filter(k => k.avg != null && k.target != null)
-    .slice(0, 10)
-    .map(k => ({
-      kpi:    k.name.length > 15 ? k.name.slice(0, 13) + '…' : k.name,
-      actual: Math.min(vsTarget(k), 135),
-      target: 100,
-    }))
+  const radarData = fingerprint.filter(k => k.avg != null && k.target != null).slice(0, 10).map(k => ({
+    kpi:    k.name.length > 15 ? k.name.slice(0, 13) + '…' : k.name,
+    actual: Math.min(vsTarget(k), 135),
+    target: 100,
+  }))
 
-  // Bridge risks
   const bridgeRisks = bridgeData?.kpis
-    ? Object.values(bridgeData.kpis)
-        .filter(k => k.avg_gap_pct != null && k.overall_status !== 'green')
-        .sort((a, b) => a.avg_gap_pct - b.avg_gap_pct)
-        .slice(0, 4)
+    ? Object.values(bridgeData.kpis).filter(k => k.avg_gap_pct != null && k.overall_status !== 'green').sort((a, b) => a.avg_gap_pct - b.avg_gap_pct).slice(0, 4)
     : []
 
-  // Streak alerts
-  const streakAlerts = fingerprint
-    .filter(k => k.monthly?.length && redStreak(k) >= 2)
-    .map(k => ({ ...k, streak: redStreak(k) }))
-    .sort((a, b) => b.streak - a.streak)
-    .slice(0, 4)
-
-  // Strong performers sorted by gap
+  const streakAlerts = fingerprint.filter(k => k.monthly?.length && redStreak(k) >= 2).map(k => ({ ...k, streak: redStreak(k) })).sort((a, b) => b.streak - a.streak).slice(0, 4)
   const strongSorted = [...greenKpis].sort((a, b) => (gapPct(b) || 0) - (gapPct(a) || 0))
 
   return (
     <div className="space-y-6 max-w-screen-xl">
 
-      {/* ── 1. HERO ──────────────────────────────────────────────────────── */}
+      {/* ── 1. HERO ─────────────────────────────────────────────────────── */}
       <div className="rounded-2xl overflow-hidden border border-slate-200"
         style={{ background: 'linear-gradient(135deg, #071e45 0%, #0a2d6e 45%, #0d3d8e 100%)' }}>
         <div className="p-7">
           <div className="flex items-start gap-6">
-
             {/* BHI Ring */}
             <div className="flex-shrink-0 flex flex-col items-center gap-2">
               <div className="relative">
@@ -690,11 +935,7 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
                 </div>
                 <span className="text-[11px] text-white/30">{dateStr}</span>
               </div>
-
-              {/* Thesis — the one sentence that matters */}
               <p className="text-[17px] font-bold text-white leading-snug mb-3 max-w-2xl">{thesis}</p>
-
-              {/* Status pills */}
               <div className="flex flex-wrap items-center gap-2 mb-4">
                 {redKpis.length > 0 && (
                   <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-red-500/20 border border-red-400/25 text-red-200 flex items-center gap-1.5">
@@ -716,8 +957,6 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
                   {fingerprint.length} KPIs
                 </span>
               </div>
-
-              {/* BHI bar */}
               <div className="max-w-sm">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[10px] text-white/40 font-medium">Business Health Index</span>
@@ -729,7 +968,6 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
               </div>
             </div>
 
-            {/* Print */}
             <button onClick={e => { e.stopPropagation(); window.print() }}
               className="hidden md:flex flex-shrink-0 items-center gap-1.5 px-3.5 py-2 bg-white/10 hover:bg-white/18 border border-white/18 rounded-xl text-xs text-white font-semibold transition-all">
               <Printer size={13}/> Print
@@ -738,12 +976,12 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
         </div>
       </div>
 
-      {/* ── 2. SIGNAL GRID — Critical | Watch | Strong ────────────────────── */}
+      {/* ── 2. SIGNAL GRID — Critical | Watch | Strong ───────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
         {/* Critical */}
-        <div className="rounded-2xl border border-red-200 overflow-hidden bg-white">
-          <div style={{ height: 3, background: '#ef4444' }}/>
+        <div className="rounded-2xl border border-red-200 overflow-hidden bg-white shadow-sm hover:shadow-[0_8px_32px_rgba(239,68,68,0.12)] transition-shadow duration-200">
+          <div style={{ height: 4, background: '#ef4444' }}/>
           <div className="p-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -761,7 +999,8 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
             ) : (
               <div className="space-y-2">
                 {atRisk.filter(k => k.fy_status === 'red').slice(0, 6).map((kpi, i) => (
-                  <KpiStatusRow key={kpi.key} kpi={kpi} rank={i+1} onNavigate={onNavigate}/>
+                  <KpiStatusRow key={kpi.key} kpi={kpi} rank={i+1} onNavigate={onNavigate}
+                    onExpand={setSideCard}/>
                 ))}
               </div>
             )}
@@ -769,8 +1008,8 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
         </div>
 
         {/* Watch */}
-        <div className="rounded-2xl border border-amber-200 overflow-hidden bg-white">
-          <div style={{ height: 3, background: '#f59e0b' }}/>
+        <div className="rounded-2xl border border-amber-200 overflow-hidden bg-white shadow-sm hover:shadow-[0_8px_32px_rgba(245,158,11,0.12)] transition-shadow duration-200">
+          <div style={{ height: 4, background: '#f59e0b' }}/>
           <div className="p-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -788,7 +1027,8 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
             ) : (
               <div className="space-y-2">
                 {atRisk.filter(k => k.fy_status === 'yellow').slice(0, 6).map((kpi, i) => (
-                  <KpiStatusRow key={kpi.key} kpi={kpi} rank={i+1} onNavigate={onNavigate}/>
+                  <KpiStatusRow key={kpi.key} kpi={kpi} rank={i+1} onNavigate={onNavigate}
+                    onExpand={setSideCard}/>
                 ))}
               </div>
             )}
@@ -796,8 +1036,8 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
         </div>
 
         {/* Strong */}
-        <div className="rounded-2xl border border-emerald-200 overflow-hidden bg-white">
-          <div style={{ height: 3, background: '#059669' }}/>
+        <div className="rounded-2xl border border-emerald-200 overflow-hidden bg-white shadow-sm hover:shadow-[0_8px_32px_rgba(5,150,105,0.12)] transition-shadow duration-200">
+          <div style={{ height: 4, background: '#059669' }}/>
           <div className="p-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -814,10 +1054,12 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
             ) : (
               <div className="space-y-2">
                 {strongSorted.slice(0, 8).map(kpi => {
-                  const gap   = gapPct(kpi)
-                  const gStr  = greenStreak(kpi)
+                  const gap  = gapPct(kpi)
+                  const gStr = greenStreak(kpi)
                   return (
-                    <div key={kpi.key} className="flex items-center justify-between py-2 px-3 rounded-xl bg-emerald-50 border border-emerald-100">
+                    <div key={kpi.key}
+                      className="flex items-center justify-between py-2 px-3 rounded-xl bg-emerald-50 border border-emerald-100 hover:bg-emerald-100/60 hover:border-emerald-200 hover:shadow-sm cursor-pointer transition-all duration-150 group"
+                      onClick={() => setSideCard({ type: 'kpi', kpi })}>
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="text-[12px] font-semibold text-slate-700 truncate">{kpi.name}</span>
                         {gStr >= 3 && (
@@ -828,9 +1070,8 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0 ml-2">
                         <span className="font-mono text-[11px] font-bold text-slate-600">{fmt(kpi.avg, kpi.unit)}</span>
-                        {gap != null && (
-                          <span className="text-[11px] font-bold text-emerald-600">+{gap.toFixed(1)}%</span>
-                        )}
+                        {gap != null && <span className="text-[11px] font-bold text-emerald-600">+{gap.toFixed(1)}%</span>}
+                        <Maximize2 size={10} className="text-slate-300 group-hover:text-slate-400 transition-colors flex-shrink-0"/>
                       </div>
                     </div>
                   )
@@ -841,7 +1082,7 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
         </div>
       </div>
 
-      {/* ── 3. HIDDEN SIGNALS ─────────────────────────────────────────────── */}
+      {/* ── 3. HIDDEN SIGNALS ────────────────────────────────────────────── */}
       {signals.length > 0 && (
         <div>
           <div className="flex items-center gap-2.5 mb-3">
@@ -858,13 +1099,13 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
             signals.length === 2 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'
           }`}>
             {signals.map((sig, i) => (
-              <HiddenSignalCard key={i} signal={sig} onNavigate={onNavigate}/>
+              <HiddenSignalCard key={i} signal={sig} onNavigate={onNavigate} onExpand={setSideCard}/>
             ))}
           </div>
         </div>
       )}
 
-      {/* ── 4. DOMAIN STORIES ─────────────────────────────────────────────── */}
+      {/* ── 4. DOMAIN STORIES ────────────────────────────────────────────── */}
       {storyDomains.length > 0 && (
         <div>
           <div className="flex items-center gap-2.5 mb-3">
@@ -877,24 +1118,20 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
           </div>
           <div className={`grid gap-4 ${storyDomains.length >= 4 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4' : `grid-cols-1 sm:grid-cols-${storyDomains.length}`}`}>
             {storyDomains.map(domain => (
-              <DomainStoryCard
-                key={domain}
-                domain={domain}
-                kpis={domainGroups[domain] || []}
-                onNavigate={onNavigate}
-              />
+              <DomainStoryCard key={domain} domain={domain} kpis={domainGroups[domain] || []}
+                onNavigate={onNavigate} onExpand={setSideCard}/>
             ))}
           </div>
         </div>
       )}
 
-      {/* ── 5. PERFORMANCE SNAPSHOT — Radar + Streaks + Bridge ────────────── */}
+      {/* ── 5. PERFORMANCE SNAPSHOT ──────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
         {/* Radar */}
-        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden lg:col-span-1 cursor-pointer hover:shadow-md transition-all"
+        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden lg:col-span-1 cursor-pointer hover:shadow-[0_8px_32px_rgba(0,85,164,0.12)] transition-all duration-200 hover:-translate-y-0.5"
           onClick={() => onNavigate('fingerprint')}>
-          <div style={{ height: 3, background: SOURCE.fingerprint.color }}/>
+          <div style={{ height: 4, background: SOURCE.fingerprint.color }}/>
           <div className="p-5">
             <div className="flex items-center justify-between mb-1">
               <span className="text-[12px] font-black text-slate-700">Performance Radar</span>
@@ -905,20 +1142,18 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
               <RadarChart data={radarData} margin={{ top: 8, right: 20, bottom: 8, left: 20 }}>
                 <PolarGrid stroke="#f1f5f9"/>
                 <PolarAngleAxis dataKey="kpi" tick={{ fill: '#94a3b8', fontSize: 8 }}/>
-                <Radar name="Target" dataKey="target"
-                  stroke="#e2e8f0" strokeWidth={1} strokeDasharray="4 3" fill="none"/>
-                <Radar name="Actual" dataKey="actual"
-                  stroke="#0055A4" fill="#0055A4" fillOpacity={0.18} strokeWidth={2}
+                <Radar name="Target" dataKey="target" stroke="#e2e8f0" strokeWidth={1} strokeDasharray="4 3" fill="none"/>
+                <Radar name="Actual" dataKey="actual" stroke="#0055A4" fill="#0055A4" fillOpacity={0.18} strokeWidth={2}
                   dot={{ fill: '#0055A4', r: 2, strokeWidth: 0 }}/>
               </RadarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Streak Alerts */}
-        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden cursor-pointer hover:shadow-md transition-all"
+        {/* Consecutive Misses */}
+        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden cursor-pointer hover:shadow-[0_8px_32px_rgba(239,68,68,0.12)] transition-all duration-200 hover:-translate-y-0.5"
           onClick={() => onNavigate('fingerprint')}>
-          <div style={{ height: 3, background: '#ef4444' }}/>
+          <div style={{ height: 4, background: '#ef4444' }}/>
           <div className="p-5">
             <div className="flex items-center justify-between mb-1">
               <span className="text-[12px] font-black text-slate-700">Consecutive Misses</span>
@@ -935,7 +1170,9 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
                 {streakAlerts.map(k => {
                   const width = Math.min((k.streak / 12) * 100, 100)
                   return (
-                    <div key={k.key}>
+                    <div key={k.key}
+                      className="cursor-pointer hover:bg-red-50/50 rounded-lg px-1 py-0.5 -mx-1 transition-colors"
+                      onClick={e => { e.stopPropagation(); setSideCard({ type: 'kpi', kpi: k }) }}>
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-[12px] font-semibold text-slate-700">{k.name}</span>
                         <span className="flex items-center gap-1 text-[11px] text-red-500 font-bold">
@@ -954,11 +1191,11 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
           </div>
         </div>
 
-        {/* Bridge summary or placeholder */}
-        <div className="rounded-2xl border overflow-hidden cursor-pointer hover:shadow-md transition-all bg-white"
+        {/* Bridge / Forecast */}
+        <div className="rounded-2xl border overflow-hidden cursor-pointer hover:shadow-[0_8px_32px_rgba(217,119,6,0.12)] transition-all duration-200 hover:-translate-y-0.5 bg-white"
           style={{ borderColor: bridgeData?.has_overlap ? '#fde68a' : '#e2e8f0' }}
           onClick={() => onNavigate('projection')}>
-          <div style={{ height: 3, background: SOURCE.projection.color }}/>
+          <div style={{ height: 4, background: SOURCE.projection.color }}/>
           <div className="p-5">
             <div className="flex items-center justify-between mb-1">
               <span className="text-[12px] font-black text-slate-700">Forecast vs Actuals</span>
@@ -974,8 +1211,7 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
                     { label: 'Ahead',       value: bridgeData.summary?.ahead,    color: '#0055A4', bg: '#eff6ff' },
                     { label: 'Months',      value: bridgeData.summary?.total_months_compared, color: '#64748b', bg: '#f8fafc' },
                   ].map(t => (
-                    <div key={t.label} className="rounded-xl p-2.5 text-center border border-slate-100"
-                      style={{ background: t.bg }}>
+                    <div key={t.label} className="rounded-xl p-2.5 text-center border border-slate-100" style={{ background: t.bg }}>
                       <div className="text-xl font-black" style={{ color: t.color }}>{t.value ?? '—'}</div>
                       <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wide mt-0.5">{t.label}</div>
                     </div>
@@ -1006,7 +1242,7 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
         </div>
       </div>
 
-      {/* ── 6. OUTLOOK ────────────────────────────────────────────────────── */}
+      {/* ── 6. OUTLOOK ───────────────────────────────────────────────────── */}
       <div className="rounded-2xl overflow-hidden border border-slate-200"
         style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)' }}>
         <div className="p-6">
@@ -1020,12 +1256,8 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
             {outlook.map((bullet, i) => (
               <div key={i} className="flex items-start gap-3">
                 <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center mt-0.5"
-                  style={{ background: i === 0 && redKpis.length > 0 ? '#ef444425' : '#ffffff10',
-                           border: `1px solid ${i === 0 && redKpis.length > 0 ? '#ef444450' : '#ffffff15'}` }}>
-                  <span className="text-[9px] font-black"
-                    style={{ color: i === 0 && redKpis.length > 0 ? '#fca5a5' : 'rgba(255,255,255,0.4)' }}>
-                    {i + 1}
-                  </span>
+                  style={{ background: i === 0 && redKpis.length > 0 ? '#ef444425' : '#ffffff10', border: `1px solid ${i === 0 && redKpis.length > 0 ? '#ef444450' : '#ffffff15'}` }}>
+                  <span className="text-[9px] font-black" style={{ color: i === 0 && redKpis.length > 0 ? '#fca5a5' : 'rgba(255,255,255,0.4)' }}>{i + 1}</span>
                 </div>
                 <p className="text-[12px] text-white/70 leading-relaxed">{bullet}</p>
               </div>
@@ -1033,6 +1265,14 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
           </div>
         </div>
       </div>
+
+      {/* ── SIDE PANEL ───────────────────────────────────────────────────── */}
+      <SidePanel
+        card={sideCard}
+        fingerprint={fingerprint}
+        onNavigate={tabId => { setSideCard(null); onNavigate(tabId) }}
+        onClose={() => setSideCard(null)}
+      />
 
     </div>
   )
