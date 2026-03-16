@@ -970,9 +970,8 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
     )
   }
 
-  // ── Period-filtered view ────────────────────────────────────────────────
-  // cellStatus is defined at module level so applyPeriod can use it
-  const fp = useMemo(() => applyPeriod(fingerprint, period?.months), [fingerprint, period])
+  // ── Period-filtered view — computed directly so it's always fresh on period change ──
+  const fp = applyPeriod(fingerprint, period?.months)
 
   // ── Derived (all use period-filtered `fp`) ─────────────────────────────
   const greenKpis  = fp.filter(k => k.fy_status === 'green')
@@ -984,8 +983,10 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
   const bhiLabel   = bhi == null ? 'No data' : bhi >= 80 ? 'Healthy' : bhi >= 60 ? 'Caution' : 'At Risk'
 
   const thesis  = buildThesis(fp, bhi)
-  const signals = useMemo(() => detectSignals(fp), [fp])
-  const outlook = useMemo(() => buildOutlook(fp, bridgeData), [fp, bridgeData])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const signals = useMemo(() => detectSignals(fp), [period, fingerprint])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const outlook = useMemo(() => buildOutlook(fp, bridgeData), [period, fingerprint, bridgeData])
 
   const domainGroups = useMemo(() => {
     const groups = {}
@@ -995,7 +996,8 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
       groups[d].push(k)
     })
     return groups
-  }, [fp])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period, fingerprint])
 
   const storyDomains = ['growth', 'retention', 'efficiency', 'cashflow'].filter(d => (domainGroups[d]?.length || 0) >= 1)
 
@@ -1019,6 +1021,18 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
 
   return (
     <div className="space-y-6 max-w-screen-xl">
+
+      {/* ── PERIOD SELECTOR BAR ─────────────────────────────────────────── */}
+      <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-2xl px-5 py-3 shadow-sm">
+        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex-shrink-0">Period</span>
+        <div className="w-px h-4 bg-slate-200 flex-shrink-0"/>
+        <PeriodSelector selected={period} onChange={setPeriod}/>
+        <div className="ml-auto flex-shrink-0">
+          <span className="text-[11px] text-slate-400">
+            {fp.length} KPIs &nbsp;·&nbsp; <span className="font-semibold text-slate-600">{periodLabel(period)}</span>
+          </span>
+        </div>
+      </div>
 
       {/* ── 1. HERO ─────────────────────────────────────────────────────── */}
       <div className="rounded-2xl overflow-hidden border border-slate-200"
@@ -1056,14 +1070,6 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
               </div>
               <p className="text-[17px] font-bold text-white leading-snug mb-3 max-w-2xl">{thesis}</p>
 
-              {/* Period selector — sits prominently in hero */}
-              <div className="mb-3 flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider flex-shrink-0">Period</span>
-                <div className="relative">
-                  <PeriodSelector selected={period} onChange={setPeriod}/>
-                </div>
-              </div>
-
               <div className="flex flex-wrap items-center gap-2 mb-4">
                 {redKpis.length > 0 && (
                   <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-red-500/20 border border-red-400/25 text-red-200 flex items-center gap-1.5">
@@ -1082,7 +1088,7 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
                   </span>
                 )}
                 <span className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-white/8 border border-white/12 text-white/40">
-                  {fp.length} KPIs · {periodLabel(period)}
+                  {fp.length} KPIs
                 </span>
               </div>
               <div className="max-w-sm">
