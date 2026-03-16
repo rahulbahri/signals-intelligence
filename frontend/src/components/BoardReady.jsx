@@ -900,10 +900,10 @@ function DomainStoryCard({ domain, kpis, onNavigate, onExpand }) {
             </div>
             <span className="text-[12px] font-black text-slate-700 uppercase tracking-wide">{meta.label}</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            {red.length > 0    && <span className="text-[9px] font-bold bg-red-50 border border-red-200 text-red-600 px-1.5 py-0.5 rounded-full">{red.length} critical</span>}
-            {yellow.length > 0 && <span className="text-[9px] font-bold bg-amber-50 border border-amber-200 text-amber-600 px-1.5 py-0.5 rounded-full">{yellow.length} watch</span>}
-            {red.length === 0 && yellow.length === 0 && <span className="text-[9px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-600 px-1.5 py-0.5 rounded-full">all on target</span>}
+          <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+            {red.length > 0    && <span className="whitespace-nowrap text-[9px] font-bold bg-red-50 border border-red-200 text-red-600 px-2 py-0.5 rounded-md">{red.length} critical</span>}
+            {yellow.length > 0 && <span className="whitespace-nowrap text-[9px] font-bold bg-amber-50 border border-amber-200 text-amber-600 px-2 py-0.5 rounded-md">{yellow.length} watch</span>}
+            {red.length === 0 && yellow.length === 0 && <span className="whitespace-nowrap text-[9px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-600 px-2 py-0.5 rounded-md">on target</span>}
             <ExpandBtn onClick={() => onExpand({ type: 'domain', domain, kpis })}/>
           </div>
         </div>
@@ -1397,7 +1397,7 @@ export default function BoardReady({ fingerprint, bridgeData, onNavigate }) {
       {/* ── SIDE PANEL ───────────────────────────────────────────────────── */}
       <SidePanel
         card={sideCard}
-        fingerprint={fingerprint}
+        fingerprint={fp}
         onNavigate={tabId => { setSideCard(null); onNavigate(tabId) }}
         onClose={() => setSideCard(null)}
       />
