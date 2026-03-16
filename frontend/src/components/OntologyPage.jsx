@@ -554,6 +554,348 @@ function NodeInspector({ nodeKey, nodes, edges, onClose }) {
   )
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// FOCUS MODE — BFS influence engine + radial graph + narrative
+// ══════════════════════════════════════════════════════════════════════════
+
+function computeInfluenceScores(focalKey, nodes, edges) {
+  const scores  = {}                         // key → { score, minDepth }
+  const visited = {}                         // key → bestScore seen so far
+  const queue   = [{ key: focalKey, depth: 0, acc: 1.0 }]
+  visited[focalKey] = 1.0
+
+  while (queue.length) {
+    const { key, depth, acc } = queue.shift()
+    if (depth >= 3) continue
+
+    edges.forEach(e => {
+      const neighbor = e.source === key ? e.target : e.target === key ? e.source : null
+      if (!neighbor || neighbor === focalKey) return
+
+      const edgeStr  = e.strength || 0.5
+      const newAcc   = acc * edgeStr * (1 / (depth + 1))
+      const newDepth = depth + 1
+
+      if (newAcc > (visited[neighbor] || 0)) {
+        visited[neighbor]  = newAcc
+        scores[neighbor]   = { score: newAcc, minDepth: newDepth }
+        queue.push({ key: neighbor, depth: newDepth, acc: newAcc })
+      }
+    })
+  }
+
+  // Normalise scores 0 → 1
+  const max = Math.max(...Object.values(scores).map(s => s.score), 0.001)
+  Object.keys(scores).forEach(k => { scores[k] = { ...scores[k], score: scores[k].score / max } })
+  return scores
+}
+
+function buildFocusNarrative(focalKey, nodes, edges, influenceScores) {
+  const nm = {}; nodes.forEach(n => (nm[n.key] = n))
+  const focal = nm[focalKey]
+  if (!focal) return ''
+
+  const direct   = Object.entries(influenceScores).filter(([, i]) => i.minDepth === 1).sort(([, a], [, b]) => b.score - a.score)
+  const indirect = Object.entries(influenceScores).filter(([, i]) => i.minDepth >= 2) .sort(([, a], [, b]) => b.score - a.score).slice(0, 2)
+  const total    = Object.keys(influenceScores).length
+
+  let txt = `${focal.name} connects to ${total} KPI${total !== 1 ? 's' : ''} across up to 3 hops. `
+  if (direct.length) {
+    const names = direct.slice(0, 3).map(([k, info]) => {
+      const rel = edges.find(e => (e.source === focalKey && e.target === k) || (e.target === focalKey && e.source === k))
+      return `${nm[k]?.name} (${Math.round(info.score * 100)}% — ${fmtRelation(rel?.relation || 'INFLUENCES')})`
+    })
+    txt += `Direct connections: ${names.join(', ')}. `
+  }
+  if (indirect.length) {
+    const names = indirect.map(([k, info]) => `${nm[k]?.name} (${Math.round(info.score * 100)}% at ${info.minDepth} hops)`)
+    txt += `Indirect influence flows from ${names.join(' and ')} through the network with diminishing weight.`
+  }
+  return txt
+}
+
+// ── Radial Focus Graph ────────────────────────────────────────────────────
+function FocusGraph({ nodes, edges, focalKey, influenceScores }) {
+  const svgRef = useRef(null)
+  const W = 900, H = 660
+  const { vp, handlers, zoomBy, reset } = useZoomPan(svgRef, W, H)
+  const { scale, tx, ty } = vp
+
+  const nodeMap = useMemo(() => { const m = {}; nodes.forEach(n => (m[n.key] = n)); return m }, [nodes])
+
+  const layout = useMemo(() => {
+    if (!focalKey) return {}
+    const pos = { [focalKey]: { x: W / 2, y: H / 2 } }
+    const byDepth = { 1: [], 2: [], 3: [] }
+    Object.entries(influenceScores).forEach(([k, info]) => {
+      if (byDepth[info.minDepth]) byDepth[info.minDepth].push({ key: k, score: info.score })
+    })
+    const RADII = { 1: 165, 2: 290, 3: 390 }
+    Object.entries(byDepth).forEach(([d, items]) => {
+      items.sort((a, b) => b.score - a.score)
+      const r = RADII[d]
+      items.forEach(({ key }, i) => {
+        const angle = (i / items.length) * Math.PI * 2 - Math.PI / 2
+        pos[key] = { x: W / 2 + r * Math.cos(angle), y: H / 2 + r * Math.sin(angle) }
+      })
+    })
+    return pos
+  }, [focalKey, influenceScores])
+
+  if (!focalKey || !nodeMap[focalKey]) return (
+    <div style={{ height: 660, background: '#0f172a', borderRadius: 8, display: 'flex',
+      alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
+      <Network size={40} color="#334155"/>
+      <p style={{ color: '#475569', fontSize: 14 }}>Select a KPI above to see its influence map</p>
+    </div>
+  )
+
+  const visibleEdges = edges.filter(e => layout[e.source] && layout[e.target])
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <svg ref={svgRef} width="100%" height={H} viewBox={`0 0 ${W} ${H}`}
+        style={{ background: '#0f172a', borderRadius: 8, display: 'block', cursor: 'grab' }}
+        {...handlers}>
+        <defs>
+          {Object.entries(RELATION_COLOR).map(([rel, col]) => (
+            <marker key={rel} id={`fa-${rel}`} markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L6,3 z" fill={col} opacity="0.85"/>
+            </marker>
+          ))}
+        </defs>
+        <g transform={`translate(${tx},${ty}) scale(${scale})`}>
+          {/* Concentric ring guides */}
+          {[165, 290, 390].map((r, i) => (
+            <g key={r}>
+              <circle cx={W/2} cy={H/2} r={r} fill="none" stroke="#1e293b" strokeWidth="1" strokeDasharray="5 5"/>
+              <text x={W/2 + 6} y={H/2 - r + 12} fontSize="9" fill="#334155">{i + 1} hop{i ? 's' : ''}</text>
+            </g>
+          ))}
+
+          {/* Edges */}
+          {visibleEdges.map((e, i) => {
+            const pa = layout[e.source], pb = layout[e.target]
+            if (!pa || !pb) return null
+            const isFocalEdge = e.source === focalKey || e.target === focalKey
+            const neighbor    = e.source === focalKey ? e.target : e.source
+            const info        = influenceScores[neighbor]
+            const col         = RELATION_COLOR[e.relation] || '#64748b'
+            const sw          = isFocalEdge ? Math.max(0.8, (info?.score || 0.1) * 4) : 0.4
+            return (
+              <line key={i} x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}
+                stroke={col} strokeWidth={sw}
+                opacity={isFocalEdge ? 0.75 : 0.18}
+                markerEnd={`url(#fa-${e.relation})`}/>
+            )
+          })}
+
+          {/* Nodes */}
+          {Object.entries(layout).map(([key, pos]) => {
+            const node = nodeMap[key]; if (!node) return null
+            const isFocal = key === focalKey
+            const info    = influenceScores[key]
+            const col     = DOMAIN_COLOR[node.domain] || '#94a3b8'
+            const r       = isFocal ? 22 : Math.max(7, 7 + (info?.score || 0) * 14)
+            return (
+              <g key={key}>
+                <circle cx={pos.x} cy={pos.y} r={r + 6} fill={col} opacity={0.13}/>
+                {isFocal && <circle cx={pos.x} cy={pos.y} r={r + 16} fill="none"
+                  stroke={col} strokeWidth="2" opacity={0.35} strokeDasharray="6 4"/>}
+                <circle cx={pos.x} cy={pos.y} r={r} fill={col} opacity={1}/>
+                <text x={pos.x} y={pos.y + r + 13} textAnchor="middle"
+                  fontSize={isFocal ? '12' : '10'} fontWeight={isFocal ? '700' : '400'}
+                  fill="#f1f5f9" style={{ pointerEvents: 'none' }}>{node.name}</text>
+                {!isFocal && info && (
+                  <text x={pos.x} y={pos.y + r + 23} textAnchor="middle"
+                    fontSize="9" fill="#475569" style={{ pointerEvents: 'none' }}>
+                    {Math.round(info.score * 100)}%
+                  </text>
+                )}
+              </g>
+            )
+          })}
+        </g>
+      </svg>
+      <ZoomControls scale={scale} zoomBy={zoomBy} reset={reset}/>
+      <div style={{ position: 'absolute', bottom: 14, left: 14, background: '#0f172acc',
+        borderRadius: 5, padding: '3px 8px', color: '#e2e8f0', fontSize: 10, pointerEvents: 'none' }}>
+        Scroll to zoom · Drag to pan
+      </div>
+    </div>
+  )
+}
+
+// ── Influence sidebar panel (Focus mode) ──────────────────────────────────
+function InfluencePanel({ focalKey, nodes, influenceScores, narrative }) {
+  const nm = {}; nodes.forEach(n => (nm[n.key] = n))
+  const ranked = Object.entries(influenceScores).sort(([, a], [, b]) => b.score - a.score).slice(0, 12)
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: 260, flexShrink: 0 }}>
+      <div style={{ background: '#1e293b', borderRadius: 8, border: '1px solid #334155', padding: 14 }}>
+        <div style={{ color: '#e2e8f0', fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Focus Analysis</div>
+        <p style={{ color: '#cbd5e1', fontSize: 11, lineHeight: 1.65 }}>{narrative}</p>
+      </div>
+      <div style={{ background: '#1e293b', borderRadius: 8, border: '1px solid #334155', padding: 14 }}>
+        <div style={{ color: '#e2e8f0', fontSize: 12, fontWeight: 700, marginBottom: 4 }}>Influence Ranking</div>
+        <div style={{ color: '#94a3b8', fontSize: 10, marginBottom: 10 }}>Ranked by path-weighted impact</div>
+        {ranked.map(([key, info], i) => {
+          const n = nm[key]; if (!n) return null
+          const col   = DOMAIN_COLOR[n.domain] || '#94a3b8'
+          const depth = info.minDepth === 1 ? 'direct' : `${info.minDepth} hops`
+          const pct   = Math.round(info.score * 100)
+          return (
+            <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8,
+              padding: '6px 0', borderBottom: '1px solid #0f172a' }}>
+              <span style={{ color: '#334155', fontSize: 10, width: 16, textAlign: 'right', fontWeight: 700 }}>{i+1}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ color: '#f1f5f9', fontSize: 11, fontWeight: 600 }}>{n.name}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3 }}>
+                  <div style={{ height: 3, borderRadius: 2, background: col, width: `${pct}%`, maxWidth: 80 }}/>
+                  <span style={{ color: '#64748b', fontSize: 9 }}>{depth}</span>
+                </div>
+              </div>
+              <span style={{ color: '#00AEEF', fontWeight: 700, fontSize: 12, flexShrink: 0 }}>{pct}%</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// SENSITIVITY MODE — per-domain weight sliders + weighted graph + narrative
+// ══════════════════════════════════════════════════════════════════════════
+
+const DEFAULT_SENSITIVITY = { growth:1,retention:1,profitability:1,efficiency:1,cashflow:1,revenue:1,risk:1 }
+
+const SENSITIVITY_PRESETS = [
+  { name:'Cash Preservation', s:{ growth:0.5,retention:1.2,profitability:1.5,efficiency:2.0,cashflow:3.0,revenue:0.7,risk:2.0 } },
+  { name:'Growth Focus',      s:{ growth:3.0,retention:1.5,profitability:0.5,efficiency:0.7,cashflow:0.5,revenue:2.5,risk:0.5 } },
+  { name:'Retention Priority',s:{ growth:0.8,retention:3.0,profitability:1.0,efficiency:1.0,cashflow:1.0,revenue:1.5,risk:1.2 } },
+  { name:'Risk Alert',        s:{ growth:0.6,retention:1.5,profitability:1.2,efficiency:1.0,cashflow:2.0,revenue:0.8,risk:3.0 } },
+]
+
+function applyEdgeWeights(edges, nodes, sensitivity) {
+  const nm = {}; nodes.forEach(n => (nm[n.key] = n))
+  return edges.map(e => {
+    const sw = sensitivity[nm[e.source]?.domain] ?? 1
+    const tw = sensitivity[nm[e.target]?.domain] ?? 1
+    return { ...e, strength: (e.strength || 0.5) * Math.sqrt(sw * tw) }
+  })
+}
+
+function applyNodeWeights(nodes, weightedEdges, sensitivity) {
+  const wDeg = {}
+  weightedEdges.forEach(e => {
+    wDeg[e.source] = (wDeg[e.source] || 0) + (e.strength || 0.5)
+    wDeg[e.target] = (wDeg[e.target] || 0) + (e.strength || 0.5)
+  })
+  const max = Math.max(...Object.values(wDeg), 0.001)
+  return nodes.map(n => ({ ...n, centrality: ((wDeg[n.key] || 0) / max) * (sensitivity[n.domain] ?? 1) }))
+}
+
+function buildSensitivityNarrative(nodes, weightedEdges, sensitivity) {
+  const entries = Object.entries(sensitivity)
+  const maxD    = entries.reduce((a, b) => b[1] > a[1] ? b : a)
+  const minD    = entries.reduce((a, b) => b[1] < a[1] ? b : a)
+  const atBase  = entries.every(([, v]) => Math.abs(v - 1.0) < 0.05)
+
+  if (atBase) return 'All domains at baseline (1.0×). Adjust sliders to see how different priorities reshape the network — higher sensitivity amplifies edge weights and node prominence in that domain.'
+
+  const wDeg = {}
+  weightedEdges.forEach(e => {
+    wDeg[e.source] = (wDeg[e.source] || 0) + (e.strength || 0.5)
+    wDeg[e.target] = (wDeg[e.target] || 0) + (e.strength || 0.5)
+  })
+  const nm = {}; nodes.forEach(n => (nm[n.key] = n))
+  const topKey  = Object.entries(wDeg).sort(([, a], [, b]) => b - a)[0]?.[0]
+  const topNode = nm[topKey]
+
+  let txt = ''
+  if (maxD[1] > 1.2) txt += `At ${maxD[1].toFixed(1)}× sensitivity, ${fmtDomain(maxD[0])} domain connections carry amplified weight — relationships touching these KPIs become primary signal pathways. `
+  if (minD[1] < 0.8) txt += `${fmtDomain(minD[0])} KPIs are de-emphasised (${minD[1].toFixed(1)}×), reducing their pull on the network topology. `
+  if (topNode)        txt += `Under these weights, ${topNode.name} (${fmtDomain(topNode.domain)}) emerges as the highest-leverage node.`
+  return txt
+}
+
+// ── Sensitivity sidebar panel ─────────────────────────────────────────────
+function SensitivityPanel({ sensitivity, onChange, onReset, scenarios, onSave, onLoad, narrative }) {
+  const [nameInput, setNameInput] = useState('')
+  const allPresets = [...SENSITIVITY_PRESETS, ...scenarios]
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: 260, flexShrink: 0 }}>
+
+      {/* Sliders */}
+      <div style={{ background: '#1e293b', borderRadius: 8, border: '1px solid #334155', padding: 14 }}>
+        <div style={{ color: '#e2e8f0', fontSize: 12, fontWeight: 700, marginBottom: 12 }}>Domain Sensitivity</div>
+        {Object.keys(DEFAULT_SENSITIVITY).map(domain => {
+          const val = sensitivity[domain] ?? 1.0
+          const col = DOMAIN_COLOR[domain] || '#94a3b8'
+          const delta = val - 1.0
+          return (
+            <div key={domain} style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ color: col, fontSize: 11, fontWeight: 600 }}>{fmtDomain(domain)}</span>
+                <span style={{ fontSize: 11, fontWeight: 700,
+                  color: delta > 0.05 ? '#10b981' : delta < -0.05 ? '#ef4444' : '#e2e8f0' }}>
+                  {val.toFixed(1)}×
+                </span>
+              </div>
+              <input type="range" min="0.1" max="3.0" step="0.1" value={val}
+                onChange={e => onChange({ ...sensitivity, [domain]: parseFloat(e.target.value) })}
+                style={{ width: '100%', accentColor: col, cursor: 'pointer' }}/>
+              <div style={{ display:'flex', justifyContent:'space-between', marginTop: 2 }}>
+                <span style={{ color:'#334155', fontSize: 9 }}>0.1× (mute)</span>
+                <span style={{ color:'#334155', fontSize: 9 }}>3.0× (amplify)</span>
+              </div>
+            </div>
+          )
+        })}
+        <button onClick={onReset}
+          style={{ width:'100%', padding:'6px', borderRadius:6, background:'#334155',
+            color:'#e2e8f0', border:'none', cursor:'pointer', fontSize:11, fontWeight:600, marginTop:4 }}>
+          ↺ Reset to Baseline
+        </button>
+      </div>
+
+      {/* Narrative */}
+      <div style={{ background: '#1e293b', borderRadius: 8, border: '1px solid #334155', padding: 14 }}>
+        <div style={{ color: '#e2e8f0', fontSize: 11, fontWeight: 700, marginBottom: 8 }}>Sensitivity Insight</div>
+        <p style={{ color: '#cbd5e1', fontSize: 11, lineHeight: 1.65 }}>{narrative}</p>
+      </div>
+
+      {/* Scenarios */}
+      <div style={{ background: '#1e293b', borderRadius: 8, border: '1px solid #334155', padding: 14 }}>
+        <div style={{ color: '#e2e8f0', fontSize: 11, fontWeight: 700, marginBottom: 8 }}>Scenarios</div>
+        <div style={{ display:'flex', gap:4, marginBottom: 10 }}>
+          <input value={nameInput} onChange={e => setNameInput(e.target.value)}
+            placeholder="Save current as…"
+            style={{ flex:1, padding:'4px 8px', borderRadius:6, border:'1px solid #334155',
+              background:'#0f172a', color:'#e2e8f0', fontSize:11 }}/>
+          <button onClick={() => { if (nameInput.trim()) { onSave(nameInput.trim(), sensitivity); setNameInput('') } }}
+            style={{ padding:'4px 10px', borderRadius:6, background:'#0055A4',
+              color:'#fff', border:'none', cursor:'pointer', fontSize:11, fontWeight:600 }}>
+            Save
+          </button>
+        </div>
+        {allPresets.map((sc, i) => (
+          <div key={i} onClick={() => onLoad(sc.s)}
+            style={{ padding:'7px 8px', borderRadius:6, cursor:'pointer',
+              borderBottom:'1px solid #0f172a', display:'flex', alignItems:'center', justifyContent:'space-between',
+              transition:'background 0.1s' }}
+            onMouseEnter={e => e.currentTarget.style.background = '#0f172a'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+            <span style={{ color:'#e2e8f0', fontSize:11 }}>{sc.name}</span>
+            <span style={{ color:'#334155', fontSize:10 }}>Load →</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Recommendation filter definitions ─────────────────────────────────────
 const REC_FILTERS = [
   { id: 'all',              label: 'All types' },
@@ -742,6 +1084,36 @@ export default function OntologyPage() {
   const [recFilter, setRecFilter] = useState('all')
   const [clusterView, setClusterView] = useState(false)
 
+  // ── New: graph analysis modes ──────────────────────────────────────────
+  const [graphMode,   setGraphMode]   = useState('standard') // 'standard' | 'focus' | 'sensitivity'
+  const [focusNode,   setFocusNode]   = useState('')
+  const [sensitivity, setSensitivity] = useState({ ...DEFAULT_SENSITIVITY })
+  const [scenarios,   setScenarios]   = useState([])
+
+  // Derived: Focus Mode
+  const influenceScores = useMemo(
+    () => focusNode && graphMode === 'focus' ? computeInfluenceScores(focusNode, graph.nodes, graph.edges) : {},
+    [focusNode, graph, graphMode]
+  )
+  const focusNarrative = useMemo(
+    () => focusNode && graphMode === 'focus' ? buildFocusNarrative(focusNode, graph.nodes, graph.edges, influenceScores) : '',
+    [focusNode, graph, influenceScores, graphMode]
+  )
+
+  // Derived: Sensitivity Mode
+  const weightedEdges = useMemo(
+    () => graphMode === 'sensitivity' ? applyEdgeWeights(graph.edges, graph.nodes, sensitivity) : graph.edges,
+    [graph, sensitivity, graphMode]
+  )
+  const weightedNodes = useMemo(
+    () => graphMode === 'sensitivity' ? applyNodeWeights(graph.nodes, weightedEdges, sensitivity) : graph.nodes,
+    [graph, weightedEdges, graphMode]
+  )
+  const sensitivityNarrative = useMemo(
+    () => buildSensitivityNarrative(graph.nodes, weightedEdges, sensitivity),
+    [graph.nodes, weightedEdges, sensitivity]
+  )
+
   const loadData = useCallback(async (dom = domain) => {
     setLoading(true)
     try {
@@ -874,9 +1246,12 @@ export default function OntologyPage() {
       {/* Knowledge Graph tab */}
       {tab === 'graph' && (
         <>
+          {/* ── Controls row ─────────────────────────────────────────────── */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {DOMAINS.map(d => (
+
+            {/* Left: domain pills (standard) | focus KPI selector | sensitivity label */}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              {graphMode === 'standard' && DOMAINS.map(d => (
                 <button key={d} onClick={() => setDomain(d)}
                   style={{ padding: '4px 12px', borderRadius: 999, fontSize: 12, border: 'none',
                     cursor: 'pointer', fontWeight: 500,
@@ -885,24 +1260,68 @@ export default function OntologyPage() {
                   {d === 'all' ? 'All Domains' : fmtDomain(d)}
                 </button>
               ))}
+
+              {graphMode === 'focus' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: '#94a3b8', fontSize: 12 }}>Focus KPI:</span>
+                  <select value={focusNode} onChange={e => setFocusNode(e.target.value)}
+                    style={{ padding: '5px 10px', borderRadius: 8, background: '#1e293b',
+                      color: '#f1f5f9', border: '1px solid #334155', fontSize: 12, cursor: 'pointer' }}>
+                    <option value="">— select a KPI —</option>
+                    {[...graph.nodes].sort((a, b) => a.name.localeCompare(b.name)).map(n => (
+                      <option key={n.key} value={n.key}>{n.name}</option>
+                    ))}
+                  </select>
+                  {focusNode && (
+                    <span style={{ fontSize: 11, color: '#94a3b8' }}>
+                      {Object.keys(influenceScores).length} KPIs connected · up to 3 hops
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {graphMode === 'sensitivity' && (
+                <span style={{ color: '#94a3b8', fontSize: 12 }}>
+                  Adjust domain sliders → to re-weight the network in real time
+                </span>
+              )}
             </div>
-            {/* Cluster View toggle */}
-            <div style={{ display: 'flex', alignItems: 'center', background: '#1e293b',
-              borderRadius: 8, padding: 3, gap: 2, border: '1px solid #334155', flexShrink: 0 }}>
-              <button onClick={() => setClusterView(false)}
-                style={{ padding: '4px 12px', borderRadius: 6, fontSize: 11, border: 'none',
-                  cursor: 'pointer', fontWeight: 600,
-                  background: !clusterView ? '#0055A4' : 'transparent',
-                  color: !clusterView ? '#fff' : '#94a3b8' }}>
-                Force Layout
-              </button>
-              <button onClick={() => setClusterView(true)}
-                style={{ padding: '4px 12px', borderRadius: 6, fontSize: 11, border: 'none',
-                  cursor: 'pointer', fontWeight: 600,
-                  background: clusterView ? '#0055A4' : 'transparent',
-                  color: clusterView ? '#fff' : '#94a3b8' }}>
-                Cluster View
-              </button>
+
+            {/* Right: mode switcher + layout toggle (standard only) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              {/* Graph mode switcher */}
+              <div style={{ display:'flex', alignItems:'center', background:'#1e293b',
+                borderRadius:8, padding:3, gap:2, border:'1px solid #334155' }}>
+                {[['standard','Standard'],['focus','Focus Mode'],['sensitivity','Sensitivity']].map(([id, label]) => (
+                  <button key={id} onClick={() => setGraphMode(id)}
+                    style={{ padding:'4px 14px', borderRadius:6, fontSize:11, border:'none',
+                      cursor:'pointer', fontWeight:600,
+                      background: graphMode === id ? '#0055A4' : 'transparent',
+                      color: graphMode === id ? '#fff' : '#94a3b8' }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {/* Layout toggle — only in standard mode */}
+              {graphMode === 'standard' && (
+                <div style={{ display:'flex', alignItems:'center', background:'#1e293b',
+                  borderRadius:8, padding:3, gap:2, border:'1px solid #334155' }}>
+                  <button onClick={() => setClusterView(false)}
+                    style={{ padding:'4px 12px', borderRadius:6, fontSize:11, border:'none',
+                      cursor:'pointer', fontWeight:600,
+                      background: !clusterView ? '#0055A4' : 'transparent',
+                      color: !clusterView ? '#fff' : '#94a3b8' }}>
+                    Force
+                  </button>
+                  <button onClick={() => setClusterView(true)}
+                    style={{ padding:'4px 12px', borderRadius:6, fontSize:11, border:'none',
+                      cursor:'pointer', fontWeight:600,
+                      background: clusterView ? '#0055A4' : 'transparent',
+                      color: clusterView ? '#fff' : '#94a3b8' }}>
+                    Cluster
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -968,7 +1387,22 @@ export default function OntologyPage() {
                   </span>
                 </div>
 
-                {clusterView ? (
+                {/* ── Canvas: mode-aware ─────────────────────────────── */}
+                {graphMode === 'focus' ? (
+                  <FocusGraph
+                    nodes={graph.nodes}
+                    edges={graph.edges}
+                    focalKey={focusNode}
+                    influenceScores={influenceScores}
+                  />
+                ) : graphMode === 'sensitivity' ? (
+                  <ForceGraph
+                    nodes={weightedNodes}
+                    edges={weightedEdges}
+                    selected={selected}
+                    onSelect={setSelected}
+                  />
+                ) : clusterView ? (
                   <ClusterGraph
                     nodes={graph.nodes}
                     edges={graph.edges}
@@ -985,15 +1419,38 @@ export default function OntologyPage() {
                 )}
               </div>
 
+              {/* ── Right sidebar: mode-aware ────────────────────────── */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: 260, flexShrink: 0 }}>
-                {selected ? (
+
+                {graphMode === 'focus' && focusNode && (
+                  <InfluencePanel
+                    focalKey={focusNode}
+                    nodes={graph.nodes}
+                    influenceScores={influenceScores}
+                    narrative={focusNarrative}
+                  />
+                )}
+
+                {graphMode === 'sensitivity' && (
+                  <SensitivityPanel
+                    sensitivity={sensitivity}
+                    onChange={setSensitivity}
+                    onReset={() => setSensitivity({ ...DEFAULT_SENSITIVITY })}
+                    scenarios={scenarios}
+                    onSave={(name, s) => setScenarios(prev => [...prev, { name, s }])}
+                    onLoad={s => setSensitivity({ ...s })}
+                    narrative={sensitivityNarrative}
+                  />
+                )}
+
+                {graphMode === 'standard' && selected ? (
                   <NodeInspector
                     nodeKey={selected}
                     nodes={graph.nodes}
                     edges={graph.edges}
                     onClose={() => setSelected(null)}
                   />
-                ) : stats?.top_nodes_by_pagerank?.length > 0 && (
+                ) : graphMode === 'standard' && stats?.top_nodes_by_pagerank?.length > 0 && (
                   <div style={{ background: '#1e293b', borderRadius: 8, border: '1px solid #334155', padding: 14 }}>
                     <div style={{ marginBottom: 10 }}>
                       <div style={{ color: '#e2e8f0', fontSize: 12, fontWeight: 700 }}>
@@ -1028,7 +1485,7 @@ export default function OntologyPage() {
                   </div>
                 )}
 
-                {stats?.edge_type_distribution && (
+                {graphMode === 'standard' && stats?.edge_type_distribution && (
                   <div style={{ background: '#1e293b', borderRadius: 8, border: '1px solid #334155', padding: 14 }}>
                     <div style={{ marginBottom: 10 }}>
                       <div style={{ color: '#e2e8f0', fontSize: 12, fontWeight: 700 }}>Relationship Breakdown</div>
