@@ -1227,9 +1227,9 @@ export default function OntologyPage() {
               sub: Object.entries(stats.domain_distribution || {}).map(([d,c]) => `${fmtDomain(d)}:${c}`).join(' · ') },
           ].map(({ label, value, sub }) => (
             <div key={label} className="card" style={{ padding: 16 }}>
-              <div style={{ color: '#e2e8f0', fontSize: 11, fontWeight: 600, marginBottom: 4 }}>{label}</div>
+              <div style={{ color: '#64748b', fontSize: 11, fontWeight: 600, marginBottom: 4 }}>{label}</div>
               <div style={{ color: '#0055A4', fontSize: 28, fontWeight: 700 }}>{value}</div>
-              <div style={{ color: '#e2e8f0', fontSize: 11 }}>{sub}</div>
+              <div style={{ color: '#94a3b8', fontSize: 11 }}>{sub}</div>
             </div>
           ))}
         </div>
@@ -1426,8 +1426,8 @@ export default function OntologyPage() {
                       <div key={rel} onClick={() => toggleLinkFilter(rel)}
                         style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
                           cursor: 'pointer', padding: '3px 9px', borderRadius: 20,
-                          background: active ? col + '28' : 'transparent',
-                          border: `1px solid ${active ? col + 'aa' : 'transparent'}`,
+                          background: active ? col + '28' : 'rgba(255,255,255,0.06)',
+                          border: `1px solid ${active ? col + 'aa' : '#334155'}`,
                           opacity: faded ? 0.38 : 1,
                           transition: 'all 0.15s',
                           userSelect: 'none' }}>
@@ -1460,8 +1460,8 @@ export default function OntologyPage() {
                       <div key={d} onClick={() => toggleDomainFilter(d)}
                         style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
                           cursor: 'pointer', padding: '3px 9px', borderRadius: 20,
-                          background: active ? c + '28' : 'transparent',
-                          border: `1px solid ${active ? c + 'aa' : 'transparent'}`,
+                          background: active ? c + '28' : 'rgba(255,255,255,0.06)',
+                          border: `1px solid ${active ? c + 'aa' : '#334155'}`,
                           opacity: faded ? 0.38 : 1,
                           transition: 'all 0.15s',
                           userSelect: 'none' }}>
