@@ -39,6 +39,10 @@ def get_db():
 
 def init_db():
     conn = get_db()
+    # WAL mode allows concurrent reads alongside the single write thread,
+    # preventing "database is locked" failures under background-thread writes.
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.commit()
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS uploads (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -117,6 +121,13 @@ async def auto_seed():
         seed_demo()
     if proj_count == 0:
         seed_demo_projection()
+    # Initialize ontology tables once at startup instead of on every GET request (M2)
+    try:
+        conn_ont = get_db()
+        _init_ontology_tables(conn_ont)
+        conn_ont.close()
+    except Exception:
+        pass  # Tables may not be defined yet on first cold start; discovery will create them
 
 # ─── KPI Definitions ────────────────────────────────────────────────────────
 
@@ -851,24 +862,26 @@ async def upload_csv(file: UploadFile = File(...)):
     monthly_agg  = aggregate_monthly(df, col_map)
 
     conn = get_db()
-    cur  = conn.execute(
-        "INSERT INTO uploads (filename, uploaded_at, row_count, detected_columns) VALUES (?,?,?,?)",
-        (file.filename, datetime.utcnow().isoformat(), len(df), json.dumps(col_map))
-    )
-    upload_id = cur.lastrowid
-
-    for _, row in monthly_agg.iterrows():
-        yr  = int(row["year"])
-        mo  = int(row["month"])
-        row_dict = {k: (None if (isinstance(v, float) and np.isnan(v)) else v)
-                    for k, v in row.items() if k not in ("year", "month")}
-        # Remove NaN
-        conn.execute(
-            "INSERT INTO monthly_data (upload_id, year, month, data_json) VALUES (?,?,?,?)",
-            (upload_id, yr, mo, json.dumps(row_dict))
+    try:
+        cur  = conn.execute(
+            "INSERT INTO uploads (filename, uploaded_at, row_count, detected_columns) VALUES (?,?,?,?)",
+            (file.filename, datetime.utcnow().isoformat(), len(df), json.dumps(col_map))
         )
-    conn.commit()
-    conn.close()
+        upload_id = cur.lastrowid
+
+        for _, row in monthly_agg.iterrows():
+            yr  = int(row["year"])
+            mo  = int(row["month"])
+            row_dict = {k: (None if (isinstance(v, float) and np.isnan(v)) else v)
+                        for k, v in row.items() if k not in ("year", "month")}
+            # Remove NaN
+            conn.execute(
+                "INSERT INTO monthly_data (upload_id, year, month, data_json) VALUES (?,?,?,?)",
+                (upload_id, yr, mo, json.dumps(row_dict))
+            )
+        conn.commit()
+    finally:
+        conn.close()
 
     return {
         "upload_id":        upload_id,
@@ -1084,27 +1097,29 @@ async def upload_projection(file: UploadFile = File(...)):
     monthly_agg = aggregate_monthly(df, col_map)
 
     conn = get_db()
-    # Delete-before-insert: enforce single active projection
-    conn.execute("DELETE FROM projection_monthly_data")
-    conn.execute("DELETE FROM projection_uploads")
+    try:
+        # Delete-before-insert: enforce single active projection
+        conn.execute("DELETE FROM projection_monthly_data")
+        conn.execute("DELETE FROM projection_uploads")
 
-    cur = conn.execute(
-        "INSERT INTO projection_uploads (filename, uploaded_at, row_count, detected_columns) VALUES (?,?,?,?)",
-        (file.filename, datetime.utcnow().isoformat(), len(df), json.dumps(col_map))
-    )
-    upload_id = cur.lastrowid
-
-    for _, row in monthly_agg.iterrows():
-        yr  = int(row["year"])
-        mo  = int(row["month"])
-        row_dict = {k: (None if (isinstance(v, float) and np.isnan(v)) else v)
-                    for k, v in row.items() if k not in ("year", "month")}
-        conn.execute(
-            "INSERT INTO projection_monthly_data (projection_upload_id, year, month, data_json) VALUES (?,?,?,?)",
-            (upload_id, yr, mo, json.dumps(row_dict))
+        cur = conn.execute(
+            "INSERT INTO projection_uploads (filename, uploaded_at, row_count, detected_columns) VALUES (?,?,?,?)",
+            (file.filename, datetime.utcnow().isoformat(), len(df), json.dumps(col_map))
         )
-    conn.commit()
-    conn.close()
+        upload_id = cur.lastrowid
+
+        for _, row in monthly_agg.iterrows():
+            yr  = int(row["year"])
+            mo  = int(row["month"])
+            row_dict = {k: (None if (isinstance(v, float) and np.isnan(v)) else v)
+                        for k, v in row.items() if k not in ("year", "month")}
+            conn.execute(
+                "INSERT INTO projection_monthly_data (projection_upload_id, year, month, data_json) VALUES (?,?,?,?)",
+                (upload_id, yr, mo, json.dumps(row_dict))
+            )
+        conn.commit()
+    finally:
+        conn.close()
 
     return {
         "upload_id":        upload_id,
@@ -1814,6 +1829,7 @@ def _init_ontology_tables(conn):
             relation TEXT,
             strength REAL,
             evidence TEXT,
+            direction TEXT DEFAULT 'positive',
             UNIQUE(source, target, relation)
         );
         CREATE TABLE IF NOT EXISTS ontology_recommendations (
@@ -1831,6 +1847,12 @@ def _init_ontology_tables(conn):
         );
     """)
     conn.commit()
+    # Migration: add direction column to existing ontology_edges tables
+    try:
+        conn.execute("ALTER TABLE ontology_edges ADD COLUMN direction TEXT DEFAULT 'positive'")
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
 
 
 def _run_ontology_discovery():
@@ -1869,8 +1891,8 @@ def _run_ontology_discovery():
     for source_key, rules in ALL_CAUSATION_RULES.items():
         for target_key in rules.get("downstream_impact", []):
             conn.execute("""
-                INSERT OR IGNORE INTO ontology_edges(source, target, relation, strength, evidence)
-                VALUES (?,?,'CAUSES',0.75,'domain_knowledge')
+                INSERT OR IGNORE INTO ontology_edges(source, target, relation, strength, evidence, direction)
+                VALUES (?,?,'CAUSES',0.75,'domain_knowledge','positive')
             """, (source_key, target_key))
             edge_count += 1
     conn.commit()
@@ -1931,14 +1953,41 @@ def _run_ontology_discovery():
             if abs(r) < 0.45:
                 continue
             rel = "CORRELATES_WITH" if r > 0 else "ANTI_CORRELATES"
+            direction = 'positive' if r > 0 else 'negative'
             strength = round(abs(r), 4)
             conn.execute("""
-                INSERT INTO ontology_edges(source, target, relation, strength, evidence)
-                VALUES (?,?,?,?,'monthly_correlation')
+                INSERT INTO ontology_edges(source, target, relation, strength, evidence, direction)
+                VALUES (?,?,?,?,'monthly_correlation',?)
                 ON CONFLICT(source, target, relation) DO UPDATE SET
-                  strength=MAX(strength, excluded.strength)
-            """, (ka, kb, rel, strength))
+                  strength=MAX(strength, excluded.strength),
+                  direction=excluded.direction
+            """, (ka, kb, rel, strength, direction))
             edge_count += 1
+    conn.commit()
+
+    # Back-fill direction on domain_knowledge CAUSES edges using empirical correlations.
+    # If time-series shows a negative correlation between the pair, flip the edge to negative.
+    # Infer direction on domain_knowledge CAUSES edges using node optimization direction.
+    # Domain knowledge edges use node 'direction' properties (higher/lower) as ground
+    # truth — these are more reliable than empirical correlations on synthetic data.
+    # Logic: if source and target are optimised in opposite directions (one 'higher',
+    # one 'lower'), a high value of the source drives the target the wrong way → negative.
+    node_dirs = {r["key"]: r["direction"]
+                 for r in conn.execute("SELECT key, direction FROM ontology_nodes").fetchall()}
+
+    causes_edges = conn.execute(
+        "SELECT source, target FROM ontology_edges WHERE evidence='domain_knowledge'"
+    ).fetchall()
+    for edge in causes_edges:
+        src, tgt = edge["source"], edge["target"]
+        src_dir = node_dirs.get(src, 'higher')
+        tgt_dir = node_dirs.get(tgt, 'higher')
+        inferred = 'positive' if src_dir == tgt_dir else 'negative'
+        conn.execute(
+            "UPDATE ontology_edges SET direction=? "
+            "WHERE source=? AND target=? AND evidence='domain_knowledge'",
+            (inferred, src, tgt)
+        )
     conn.commit()
 
     # ── 4. Compute degree centrality + PageRank ────────────────────────────
@@ -2099,7 +2148,6 @@ def ontology_discover():
 @app.get("/api/ontology/graph")
 def ontology_graph(domain: Optional[str] = None):
     conn = get_db()
-    _init_ontology_tables(conn)
     q = "SELECT * FROM ontology_nodes"
     params = ()
     if domain and domain != "all":
@@ -2123,7 +2171,6 @@ def ontology_graph(domain: Optional[str] = None):
 @app.get("/api/ontology/stats")
 def ontology_stats():
     conn = get_db()
-    _init_ontology_tables(conn)
     total_nodes = conn.execute("SELECT COUNT(*) FROM ontology_nodes").fetchone()[0]
     total_edges = conn.execute("SELECT COUNT(*) FROM ontology_edges").fetchone()[0]
     active_recs  = conn.execute("SELECT COUNT(*) FROM ontology_recommendations WHERE status='active'").fetchone()[0]
@@ -2146,7 +2193,6 @@ def ontology_stats():
 @app.get("/api/ontology/recommendations")
 def ontology_recommendations(rec_type: Optional[str] = None, status: Optional[str] = "active"):
     conn = get_db()
-    _init_ontology_tables(conn)
     q = "SELECT * FROM ontology_recommendations WHERE status=?"
     params: list = [status or "active"]
     if rec_type:
@@ -2167,6 +2213,359 @@ def dismiss_recommendation(rec_id: int):
     conn.commit()
     conn.close()
     return {"status": "dismissed"}
+
+
+# ─── Markov KPI Forecast ─────────────────────────────────────────────────────
+
+from pydantic import BaseModel as _BaseModel
+
+def _init_forecast_tables():
+    conn = get_db()
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS markov_models (
+            id INTEGER PRIMARY KEY,
+            kpis TEXT,
+            thresholds TEXT,
+            self_matrices TEXT,
+            cross_matrices TEXT,
+            current_states TEXT,
+            upstream_kpis TEXT,
+            days_back INTEGER DEFAULT 365,
+            trained_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS forecast_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            model_id INTEGER,
+            horizon_days INTEGER,
+            overrides TEXT,
+            n_samples INTEGER,
+            trajectories TEXT,
+            causal_paths TEXT,
+            created_at TEXT
+        );
+    """)
+    conn.commit()
+    conn.close()
+
+_init_forecast_tables()
+
+def _mrk_monthly_history():
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT year, month, data_json FROM monthly_data ORDER BY year ASC, month ASC"
+    ).fetchall()
+    conn.close()
+    result = {}
+    for r in rows:
+        try:
+            d = json.loads(r["data_json"])
+        except Exception:
+            continue
+        for k, v in d.items():
+            if v is not None:
+                result.setdefault(k, []).append(float(v))
+    return result
+
+
+def _mrk_causal_pairs():
+    """Return 5-tuples: (source, target, strength, direction, relation)."""
+    try:
+        conn = get_db()
+        rows = conn.execute(
+            "SELECT source, target, strength, COALESCE(direction, 'positive') AS direction, relation "
+            "FROM ontology_edges "
+            "WHERE relation IN ('CAUSES','INFLUENCES','CORRELATES_WITH','LEADS','ANTI_CORRELATES') "
+            "ORDER BY strength DESC"
+        ).fetchall()
+        conn.close()
+        return [(r["source"], r["target"], float(r["strength"]), r["direction"], r["relation"])
+                for r in rows]
+    except Exception:
+        return []
+
+
+# Priority for deduplicating same (src, tgt) pairs: CAUSES beats empirical correlations
+_CAUSAL_RELATION_PRIORITY = {
+    'CAUSES': 3, 'INFLUENCES': 2, 'LEADS': 2,
+    'CORRELATES_WITH': 1, 'ANTI_CORRELATES': 1,
+}
+
+
+def _build_deduped_causal_map(causal_pairs, kpis):
+    """
+    Build causal_map deduplicating by (tgt, src): when a KPI pair has both a
+    domain-knowledge CAUSES edge and an empirical CORRELATES_WITH / ANTI_CORRELATES
+    edge, keep only the higher-priority relation so the simulation doesn't double-
+    count and doesn't use conflicting directions (H3 + H4).
+    """
+    best = {}  # (tgt, src) -> (strength, direction, priority)
+    for src, tgt, strength, direction, relation in causal_pairs:
+        if src in kpis and tgt in kpis:
+            key      = (tgt, src)
+            priority = _CAUSAL_RELATION_PRIORITY.get(relation, 0)
+            if key not in best or priority > best[key][2]:
+                best[key] = (strength, direction, priority)
+    causal_map = {}
+    for (tgt, src), (strength, direction, _) in best.items():
+        causal_map.setdefault(tgt, []).append((src, strength, direction))
+    return causal_map
+
+
+def _build_markov_task():
+    """
+    Delta-based bootstrap Monte Carlo engine.
+    Learns month-over-month change distributions from history.
+    No discrete state discretisation — trajectories stay in actual KPI units.
+    """
+    history = _mrk_monthly_history()
+    if len(history) < 2:
+        return
+
+    current_values = {}
+    value_ranges   = {}
+    mean_deltas    = {}
+    std_deltas     = {}
+
+    for kpi, values in history.items():
+        if len(values) < 2:
+            continue
+        arr    = np.array(values, dtype=float)
+        deltas = np.diff(arr).tolist()
+
+        current_values[kpi] = float(arr[-1])
+        mean_deltas[kpi]    = float(np.mean(deltas))
+        std_deltas[kpi]     = float(np.std(deltas)) if len(deltas) > 1 \
+                              else max(abs(float(np.mean(deltas))) * 0.3, 0.01)
+        value_ranges[kpi] = {
+            "min":     float(np.min(arr)),
+            "max":     float(np.max(arr)),
+            "p10":     float(np.percentile(arr, 10)),
+            "p25":     float(np.percentile(arr, 25)),
+            "p50":     float(np.percentile(arr, 50)),
+            "p75":     float(np.percentile(arr, 75)),
+            "p90":     float(np.percentile(arr, 90)),
+            "current": float(arr[-1]),
+            "deltas":  deltas,          # historical MoM changes for bootstrapping
+        }
+
+    kpis         = list(current_values.keys())
+    causal_pairs = _mrk_causal_pairs()
+    upstream_kpis = list({src for src, _, _, _, _ in causal_pairs if src in kpis})
+
+    now = datetime.utcnow().isoformat()
+    conn = get_db()
+    conn.execute("DELETE FROM markov_models")
+    conn.execute(
+        "INSERT INTO markov_models (kpis, thresholds, self_matrices, cross_matrices, "
+        "current_states, upstream_kpis, days_back, trained_at) VALUES (?,?,?,?,?,?,?,?)",
+        (json.dumps(kpis),
+         json.dumps(value_ranges),   # thresholds col → value_ranges
+         json.dumps(mean_deltas),    # self_matrices col → mean_deltas
+         json.dumps(std_deltas),     # cross_matrices col → std_deltas
+         json.dumps(current_values),
+         json.dumps(upstream_kpis),
+         365, now)
+    )
+    conn.commit()
+    conn.close()
+
+
+def _project_scenario(horizon_days: int, overrides: dict, n_samples: int):
+    """
+    Bootstrap Monte Carlo projection in real KPI units.
+    overrides = {kpi: state_idx} where state_idx 0-4 maps to p10/p25/p50/p75/p90.
+    Causal influence: upstream KPI deltas propagate to downstream, scaled by
+    relative volatility so units remain comparable.
+    """
+    conn = get_db()
+    row  = conn.execute(
+        "SELECT * FROM markov_models ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    conn.close()
+    if not row:
+        return {"status": "no_model", "message": "Train model first"}
+
+    kpis         = json.loads(row["kpis"])
+    value_ranges = json.loads(row["thresholds"])
+    mean_deltas  = json.loads(row["self_matrices"])
+    std_deltas   = json.loads(row["cross_matrices"])
+    cur_values   = json.loads(row["current_states"])
+
+    causal_pairs = _mrk_causal_pairs()
+    causal_map   = _build_deduped_causal_map(causal_pairs, set(kpis))
+
+    horizon_steps = max(1, round(horizon_days / 30))
+
+    # Map state overrides (0-4) → actual KPI starting values
+    _state_pcts   = ["p10", "p25", "p50", "p75", "p90"]
+    override_vals = {}
+    for kpi, state_idx in overrides.items():
+        if kpi in value_ranges:
+            override_vals[kpi] = float(value_ranges[kpi][_state_pcts[min(int(state_idx), 4)]])
+
+    # Sustained delta bias for overridden KPIs.
+    # If a KPI is pinned above its historical median, it stays elevated (and vice versa).
+    # z-score of override vs median → persistent per-step push so trajectories compound.
+    override_delta_bias = {}
+    for kpi, override_val in override_vals.items():
+        vr       = value_ranges.get(kpi, {})
+        hist_p50 = vr.get("p50", override_val)
+        sigma    = std_deltas.get(kpi, 0.01) or 0.01
+        z        = (override_val - hist_p50) / (sigma * 3)   # normalised position
+        override_delta_bias[kpi] = z * sigma * 0.30           # 30% of 1-sigma per step
+
+    all_traj = {kpi: [] for kpi in kpis}
+
+    for _ in range(n_samples):
+        values = {k: override_vals.get(k, cur_values.get(k, 0.0)) for k in kpis}
+        path   = {k: [values[k]] for k in kpis}
+
+        for _ in range(horizon_steps):
+            # Step 1: bootstrap self-delta for every KPI
+            self_deltas = {}
+            for kpi in kpis:
+                hist  = value_ranges.get(kpi, {}).get("deltas", [])
+                sigma = std_deltas.get(kpi, 0.01)
+                if hist:
+                    d = float(np.random.choice(hist))
+                    d += float(np.random.normal(0, sigma * 0.15))  # small jitter
+                else:
+                    d = float(np.random.normal(mean_deltas.get(kpi, 0.0), sigma))
+                # Apply sustained regime bias for overridden KPIs
+                d += override_delta_bias.get(kpi, 0.0)
+                self_deltas[kpi] = d
+
+            # Step 2: blend in causal influence from upstream KPIs
+            # Uses BOTH delta-based (change propagation) and level-based (regime pressure)
+            new_values = {}
+            for kpi in kpis:
+                delta     = self_deltas[kpi]
+                tgt_sigma = std_deltas.get(kpi, 1.0) or 1.0
+                if kpi in causal_map:
+                    causal_delta = 0.0
+                    total_w      = 0.0
+                    for src, strength, direction in causal_map[kpi]:
+                        src_sigma = std_deltas.get(src, 1.0) or 1.0
+                        src_vr    = value_ranges.get(src, {})
+                        dir_sign  = 1 if direction == 'positive' else -1
+                        # Delta-based influence: upstream change propagates downstream
+                        scale          = tgt_sigma / src_sigma
+                        delta_term     = self_deltas[src] * scale * strength * dir_sign
+                        # Level-based influence: how far upstream is from its median
+                        # creates persistent directional pressure on downstream KPI.
+                        # dir_sign ensures high churn pushes revenue DOWN, not up.
+                        src_p50        = src_vr.get("p50", values[src])
+                        level_z        = (values[src] - src_p50) / (src_sigma * 3 or 1)
+                        level_term     = level_z * tgt_sigma * strength * dir_sign * 0.25
+                        causal_delta  += (delta_term + level_term)
+                        total_w       += strength
+                    if total_w > 0:
+                        causal_delta /= total_w
+                        delta = 0.6 * delta + 0.4 * causal_delta
+                new_values[kpi] = values[kpi] + delta
+
+            values = new_values
+            for kpi in kpis:
+                path[kpi].append(values[kpi])
+
+        for kpi in kpis:
+            all_traj[kpi].append(path[kpi])
+
+    # Compute p10/p50/p90 bands in real KPI units
+    trajectories = {}
+    for kpi in kpis:
+        arr  = np.array(all_traj[kpi])
+        vr   = value_ranges.get(kpi, {})
+        traj = []
+        for step in range(arr.shape[1]):
+            col = arr[:, step]
+            traj.append({
+                "step":     step,
+                "p10":      float(np.percentile(col, 10)),
+                "p50":      float(np.percentile(col, 50)),
+                "p90":      float(np.percentile(col, 90)),
+                "label":    "Now" if step == 0 else f"M+{step}",
+                "hist_p10": float(vr.get("p10", 0)),
+                "hist_p50": float(vr.get("p50", 0)),
+                "hist_p90": float(vr.get("p90", 0)),
+            })
+        trajectories[kpi] = traj
+
+    causal_paths_out = {}
+    for kpi in kpis:
+        if kpi in causal_map:
+            causal_paths_out[kpi] = [
+                {"from": src, "strength": round(float(s), 3), "direction": drn}
+                for src, s, drn in sorted(causal_map[kpi], key=lambda x: -x[1])[:3]
+            ]
+
+    now = datetime.utcnow().isoformat()
+    conn = get_db()
+    run_id = conn.execute(
+        "INSERT INTO forecast_runs (model_id, horizon_days, overrides, n_samples, "
+        "trajectories, causal_paths, created_at) VALUES (?,?,?,?,?,?,?)",
+        (row["id"], horizon_days, json.dumps(overrides), n_samples,
+         json.dumps(trajectories), json.dumps(causal_paths_out), now)
+    ).lastrowid
+    conn.commit()
+    conn.close()
+
+    return {
+        "status":           "ok",
+        "run_id":           run_id,
+        "horizon_days":     horizon_days,
+        "n_samples":        n_samples,
+        "kpis":             kpis,
+        "overrides":        overrides,
+        "trajectories":     trajectories,
+        "causal_paths":     causal_paths_out,
+        "model_trained_at": row["trained_at"],
+        "value_ranges":     value_ranges,
+    }
+
+
+class _ProjectRequest(_BaseModel):
+    horizon_days: int = 90
+    n_samples:    int = 400
+    overrides:    dict = {}
+
+
+@app.post("/api/forecast/build")
+def forecast_build():
+    def _bg():
+        try:
+            _build_markov_task()
+        except Exception:
+            import traceback; traceback.print_exc()
+    threading.Thread(target=_bg, daemon=True).start()
+    return {"status": "building", "message": "Markov model training started"}
+
+
+@app.post("/api/forecast/project")
+def forecast_project(req: _ProjectRequest):
+    result = _project_scenario(req.horizon_days, req.overrides, req.n_samples)
+    return result
+
+
+@app.get("/api/forecast/model")
+def forecast_model():
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM markov_models ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    conn.close()
+    if not row:
+        return {"status": "not_trained"}
+    return {
+        "status":         "ready",
+        "id":             row["id"],
+        "kpis":           json.loads(row["kpis"]),
+        "upstream_kpis":  json.loads(row["upstream_kpis"]),
+        "current_values": json.loads(row["current_states"]),
+        "value_ranges":   json.loads(row["thresholds"]),
+        "trained_at":     row["trained_at"],
+        "days_back":      row["days_back"],
+    }
 
 
 # ─── Serve React Frontend ───────────────────────────────────────────────────

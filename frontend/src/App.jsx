@@ -3,7 +3,7 @@ import axios from 'axios'
 import {
   LayoutDashboard, Fingerprint, TrendingUp,
   Upload, Code2, RefreshCw, ChevronRight,
-  Activity, GitBranch, Network, Layers
+  Activity, GitBranch, Network, Layers, BarChart2
 } from 'lucide-react'
 import Scorecard from './components/Scorecard.jsx'
 import Fingerprint2 from './components/Fingerprint.jsx'
@@ -17,6 +17,7 @@ import ProjectionBridge from './components/ProjectionBridge.jsx'
 import MonthRangeFilter from './components/MonthRangeFilter.jsx'
 import OntologyPage from './components/OntologyPage.jsx'
 import BoardReady from './components/BoardReady.jsx'
+import ForecastPage from './components/ForecastPage.jsx'
 
 const TABS = [
   { id: 'board',       label: 'Executive Signal',  Icon: Layers          },
@@ -25,6 +26,7 @@ const TABS = [
   { id: 'trends',      label: 'Monthly Trends',    Icon: TrendingUp      },
   { id: 'projection',  label: 'Bridge Analysis',   Icon: GitBranch       },
   { id: 'ontology',    label: 'Data Ontology',     Icon: Network         },
+  { id: 'forecast',    label: 'Signals Forecast',  Icon: BarChart2       },
   { id: 'upload',      label: 'Data Upload',       Icon: Upload          },
   { id: 'api',         label: 'API Reference',     Icon: Code2           },
 ]
@@ -36,6 +38,7 @@ const PAGE_TITLES = {
   trends:      'Monthly KPI Trends',
   projection:  'Projection vs Actual — Bridge Analysis',
   ontology:    'Data Ontology — KPI Knowledge Graph',
+  forecast:    'Signals Forecast — Markov Scenario Projection',
   upload:      'Data Upload',
   api:         'API Reference',
 }
@@ -147,8 +150,8 @@ export default function App() {
       setBridgeData(b.data); setProjectionMonthly(pm.data)
       // Auto-run ontology discovery if no nodes exist yet
       try {
-        const ont = await axios.get('/api/ontology/nodes')
-        if (!ont.data?.length) {
+        const ont = await axios.get('/api/ontology/stats')
+        if (!ont.data?.total_nodes) {
           await axios.post('/api/ontology/discover')
         }
       } catch {}
@@ -400,12 +403,14 @@ export default function App() {
                 />
               )}
               {tab === 'ontology'    && <OntologyPage />}
+              {tab === 'forecast'    && <ForecastPage />}
               {tab === 'upload'      && <CSVUpload onUploaded={loadAll}/>}
               {tab === 'api'         && <APIReference kpiDefs={kpiDefs}/>}
             </>
           )}
 
           {!loading && noData && tab === 'ontology'   && <OntologyPage />}
+          {!loading && noData && tab === 'forecast'   && <ForecastPage />}
           {!loading && noData && tab === 'upload'     && <CSVUpload onUploaded={loadAll}/>}
           {!loading && noData && tab === 'api'        && <APIReference kpiDefs={kpiDefs}/>}
           {!loading && noData && tab === 'projection' && (
