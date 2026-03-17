@@ -132,7 +132,7 @@ function useForceLayout(nodes, edges, width, height) {
     nodes.forEach((n, i) => {
       const di = domains.indexOf(n.domain)
       const angle = (di / domains.length) * Math.PI * 2 + (i * 0.3)
-      const r = Math.min(width, height) * 0.38          // wider initial spread
+      const r = Math.min(width, height) * 0.25
       posRef.current[n.key] = {
         x: width  / 2 + r * Math.cos(angle) + (Math.random() - 0.5) * 100,
         y: height / 2 + r * Math.sin(angle) + (Math.random() - 0.5) * 100,
@@ -213,7 +213,7 @@ function useForceLayout(nodes, edges, width, height) {
 
 // ── Force graph SVG ───────────────────────────────────────────────────────
 function ForceGraph({ nodes, edges, selected, onSelect, linkFilter, domainFilter }) {
-  const W = 1800, H = 1400      // large virtual canvas so nodes have room to breathe
+  const W = 1200, H = 875
   const pos = useForceLayout(nodes, edges, W, H)
 
   const svgRef = useRef(null)
@@ -239,7 +239,7 @@ function ForceGraph({ nodes, edges, selected, onSelect, linkFilter, domainFilter
 
   return (
     <div style={{ position: 'relative' }}>
-      <svg ref={svgRef} width="100%" height="1000" viewBox={`0 0 ${W} ${H}`}
+      <svg ref={svgRef} width="100%" height="875" viewBox={`0 0 ${W} ${H}`}
         style={{ background: '#0f172a', borderRadius: 8, display: 'block', cursor: 'grab' }}
         {...handlers}>
         {/* Arrow marker defs stay outside the transform group */}
@@ -382,7 +382,7 @@ function ClusterGraph({ nodes, edges, selected, onSelect, linkFilter, domainFilt
 
   return (
     <div style={{ position: 'relative' }}>
-      <svg ref={svgRef} width="100%" height="1000" viewBox={`0 0 ${W} ${H}`}
+      <svg ref={svgRef} width="100%" height="875" viewBox={`0 0 ${W} ${H}`}
         style={{ background: '#0f172a', borderRadius: 8, display: 'block', cursor: 'grab' }}
         {...handlers}>
         <defs>
@@ -677,7 +677,7 @@ function FocusGraph({ nodes, edges, focalKey, influenceScores, linkFilter, domai
 
   return (
     <div style={{ position: 'relative' }}>
-      <svg ref={svgRef} width="100%" height={H} viewBox={`0 0 ${W} ${H}`}
+      <svg ref={svgRef} width="100%" height="770" viewBox={`0 0 ${W} ${H}`}
         style={{ background: '#0f172a', borderRadius: 8, display: 'block', cursor: 'grab' }}
         {...handlers}>
         <defs>
